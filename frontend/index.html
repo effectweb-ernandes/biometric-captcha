@@ -1,201 +1,99 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Biometric CAPTCHA — Demo</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif}
-body{background:#f0f2f5;padding:20px 16px;min-height:100vh}
-h1{font-size:18px;font-weight:600;color:#111;margin-bottom:4px}
-.sub{font-size:13px;color:#888;margin-bottom:20px}
-.layout{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:860px;margin:0 auto}
-@media(max-width:620px){.layout{grid-template-columns:1fr}}
-.card{background:#fff;border-radius:12px;border:1px solid #e0e0e0;padding:20px}
-.card h2{font-size:14px;font-weight:600;color:#333;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:8px}
-.field{margin-bottom:12px}
-label{display:block;font-size:12px;color:#666;margin-bottom:3px}
-input[type=text],input[type=email],textarea{
-  width:100%;padding:9px 12px;font-size:14px;
-  border:1.5px solid #ddd;border-radius:8px;
-  outline:none;background:#fff;color:#111;
-  transition:border-color .15s;display:block;}
-input[type=text]:focus,input[type=email]:focus,textarea:focus{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.08)}
-textarea{min-height:70px;resize:vertical}
-.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.btn{padding:10px;font-size:13px;font-weight:500;border:none;border-radius:8px;cursor:pointer;transition:opacity .15s}
-.btn:hover{opacity:.85}
-.btn-enviar{background:#4f46e5;color:#fff}
-.btn-bot{background:#fff;color:#b91c1c;border:1.5px solid #fca5a5}
-.btn-reset{background:#f5f5f5;color:#555;border:1px solid #ddd;grid-column:span 2}
-.status{padding:10px 12px;border-radius:8px;font-size:13px;margin-top:10px;display:none;font-weight:500}
-.ok{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
-.warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
-.err{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
-.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
-.mc{background:#f8f8f8;border-radius:8px;padding:10px 12px}
-.ml{font-size:11px;color:#999;margin-bottom:2px}
-.mv{font-size:22px;font-weight:700;color:#111}
-.ms{font-size:11px;color:#bbb}
-.bar-bg{height:8px;background:#eee;border-radius:4px;overflow:hidden;margin:4px 0}
-.bar{height:100%;border-radius:4px;width:0%;transition:width .35s,background .35s}
-.slabel{display:flex;justify-content:space-between;font-size:11px;color:#999;margin-bottom:2px}
-.verdict{text-align:center;padding:10px;border-radius:8px;font-size:13px;font-weight:500;margin-top:8px;background:#f5f5f5;color:#999}
-.tl{height:58px;background:#f8f8f8;border-radius:8px;display:flex;align-items:flex-end;padding:4px 6px;gap:2px;overflow:hidden;margin:6px 0}
-.tb{border-radius:2px 2px 0 0;min-width:5px}
-.logbox{height:90px;overflow-y:auto;background:#111;border-radius:8px;padding:7px 10px;font-family:monospace;font-size:11px;margin-top:8px;color:#94a3b8}
-.lh{color:#4ade80}.lb{color:#f87171}.li{color:#94a3b8}
-.badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
-.bh{background:#dcfce7;color:#15803d}
-.bb{background:#fee2e2;color:#dc2626}
-.bi{background:#f1f5f9;color:#64748b}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biometric CAPTCHA -- Demo</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
 <div style="max-width:860px;margin:0 auto 16px">
-  <h1>&#x1F6E1;&#xFE0F; Biometric CAPTCHA — Demo</h1>
-  <p class="sub">Digite normalmente ou simule um bot — veja a análise em tempo real</p>
+  <h1>Biometric CAPTCHA -- Demo</h1>
+  <p class="sub">Digite normalmente ou simule um bot -- veja a analise em tempo real</p>
 </div>
+
 <div class="layout">
+
+  <!-- Painel esquerdo: Formulario -->
   <div class="card">
-    <h2>Formulário protegido <span id="badge" class="badge bi">aguardando</span></h2>
-    <div class="field"><label>Nome completo</label><input type="text" id="fn" placeholder="João Silva" autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>Email</label><input type="email" id="fe" placeholder="joao@email.com" autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>Telefone</label><input type="text" id="ft" placeholder="(11) 99999-9999" autocomplete="off" spellcheck="false"></div>
-    <div class="field"><label>Mensagem</label><textarea id="fm" placeholder="Digite sua mensagem aqui..." spellcheck="false"></textarea></div>
-    <div class="btns">
-      <button class="btn btn-enviar" onclick="enviar()">&#x2713; Enviar</button>
-      <button class="btn btn-bot" onclick="runBot()">&#x1F916; Simular Bot</button>
-      <button class="btn btn-reset" onclick="reset()">&#x21BA; Resetar</button>
+    <h2>Formulario protegido <span id="badge" class="badge bi">aguardando</span></h2>
+
+    <div class="field">
+      <label for="fn">Nome completo</label>
+      <input type="text" id="fn" placeholder="Joao Silva" autocomplete="off" spellcheck="false">
     </div>
+    <div class="field">
+      <label for="fe">Email</label>
+      <input type="email" id="fe" placeholder="joao@email.com" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="ft">Telefone</label>
+      <input type="text" id="ft" placeholder="(11) 99999-9999" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="fm">Mensagem</label>
+      <textarea id="fm" placeholder="Digite sua mensagem aqui..." spellcheck="false"></textarea>
+    </div>
+
+    <div class="btns">
+      <button class="btn btn-enviar" onclick="enviar()">Enviar</button>
+      <button class="btn btn-bot"    onclick="runBot()">Simular Bot</button>
+      <button class="btn btn-reset"  onclick="reset()">Resetar</button>
+    </div>
+
     <div class="status" id="st"></div>
   </div>
+
+  <!-- Painel direito: Analise biometrica -->
   <div class="card">
-    <h2>Análise biométrica em tempo real</h2>
+    <h2>Analise biometrica em tempo real</h2>
+
     <div class="mgrid">
-      <div class="mc"><div class="ml">Coef. variação</div><div class="mv" id="mcv">—</div><div class="ms">humano &gt; 0.3</div></div>
-      <div class="mc"><div class="ml">Média/tecla</div><div class="mv" id="mavg">—</div><div class="ms">ms</div></div>
-      <div class="mc"><div class="ml">Backspaces</div><div class="mv" id="mbp">0</div><div class="ms">erros corrigidos</div></div>
-      <div class="mc"><div class="ml">Teclas</div><div class="mv" id="mkeys">0</div><div class="ms">capturadas</div></div>
+      <div class="mc">
+        <div class="ml">Coef. variacao</div>
+        <div class="mv" id="mcv">--</div>
+        <div class="ms">humano &gt; 0.3</div>
+      </div>
+      <div class="mc">
+        <div class="ml">Media/tecla</div>
+        <div class="mv" id="mavg">--</div>
+        <div class="ms">ms</div>
+      </div>
+      <div class="mc">
+        <div class="ml">Backspaces</div>
+        <div class="mv" id="mbp">0</div>
+        <div class="ms">erros corrigidos</div>
+      </div>
+      <div class="mc">
+        <div class="ml">Teclas</div>
+        <div class="mv" id="mkeys">0</div>
+        <div class="ms">capturadas</div>
+      </div>
     </div>
-    <div style="font-size:11px;color:#bbb;margin-bottom:3px">Ritmo de digitação (barras = intervalo entre teclas)</div>
+
+    <p class="aux-label">Ritmo de digitacao (barras = intervalo entre teclas)</p>
     <div class="tl" id="tl"></div>
-    <div class="slabel"><span>Score de humanidade</span><span id="spct">0%</span></div>
-    <div class="bar-bg"><div class="bar" id="sbar"></div></div>
-    <div class="verdict" id="verd">Aguardando digitação...</div>
-    <div style="font-size:11px;color:#bbb;margin:8px 0 3px">Log de eventos</div>
+
+    <div class="slabel">
+      <span>Score de humanidade</span>
+      <span id="spct">0%</span>
+    </div>
+    <div class="bar-bg">
+      <div class="bar" id="sbar"></div>
+    </div>
+
+    <div class="verdict" id="verd">Aguardando digitacao...</div>
+
+    <p class="aux-label" style="margin-top:8px">Log de eventos</p>
     <div class="logbox" id="log"></div>
   </div>
+
 </div>
-<script>
-var iv=[],lk=0,bp=0,keys=0,fj=[],lb2=0,tbars=[],botOn=false,human=true;
-function std(a){if(a.length<2)return 0;var m=mn(a);return Math.sqrt(a.map(function(x){return(x-m)*(x-m);}).reduce(function(a,b){return a+b;},0)/a.length);}
-function mn(a){return a.length?a.reduce(function(a,b){return a+b;},0)/a.length:0;}
-function slp(ms){return new Promise(function(r){setTimeout(r,ms);});}
-function addBar(ms,bot){
-  var tl=document.getElementById('tl');
-  var h=Math.max(3,Math.min(ms,700)/700*50);
-  var bar=document.createElement('div');bar.className='tb';
-  bar.style.height=h+'px';
-  bar.style.background=bot?'#f87171':(ms<150?'#f87171':ms<400?'#60a5fa':'#4ade80');
-  bar.style.flexShrink='0';
-  tl.appendChild(bar);tbars.push(bar);
-  if(tbars.length>55){var old=tbars.shift();if(old.parentNode)old.parentNode.removeChild(old);}
-}
-function addLog(msg,cls){
-  var el=document.getElementById('log');
-  var d=document.createElement('div');d.className=cls||'li';
-  var t=new Date();
-  d.textContent=t.getHours()+':'+String(t.getMinutes()).padStart(2,'0')+':'+String(t.getSeconds()).padStart(2,'0')+' '+msg;
-  el.appendChild(d);el.scrollTop=el.scrollHeight;
-}
-function score(){
-  if(iv.length<4)return 0;
-  var cv=mn(iv)>0?std(iv)/mn(iv):0;var avg=mn(iv);var s=0;
-  if(cv>0.5)s+=35;else if(cv>0.3)s+=25;else if(cv>0.1)s+=12;
-  if(avg>150)s+=20;else if(avg>80)s+=14;else if(avg>40)s+=6;
-  if(bp>=3)s+=20;else if(bp>=1)s+=12;
-  if(fj.length>=1){var jv=std(fj);if(jv>300)s+=20;else if(jv>100)s+=12;else s+=2;}
-  return Math.min(s,100);
-}
-function ui(){
-  var cv=mn(iv)>0?std(iv)/mn(iv):0;var avg=mn(iv);
-  document.getElementById('mcv').textContent=iv.length>1?cv.toFixed(2):'—';
-  document.getElementById('mavg').textContent=iv.length>1?Math.round(avg)+'ms':'—';
-  document.getElementById('mbp').textContent=bp;
-  document.getElementById('mkeys').textContent=keys;
-  var sc=score();
-  document.getElementById('spct').textContent=sc+'%';
-  var bar=document.getElementById('sbar');
-  bar.style.width=sc+'%';
-  bar.style.background=sc>=65?'#16a34a':sc>=35?'#d97706':'#dc2626';
-  var v=document.getElementById('verd');
-  if(iv.length<4){v.style.cssText='background:#f5f5f5;color:#999';v.textContent='Aguardando mais dados...';}
-  else if(sc>=65){v.style.cssText='background:#f0fdf4;color:#166534';v.textContent='✓ Humano — padrão orgânico detectado';}
-  else if(sc>=35){v.style.cssText='background:#fffbeb;color:#92400e';v.textContent='⚠ Suspeito — padrão ambíguo';}
-  else{v.style.cssText='background:#fef2f2;color:#991b1b';v.textContent='✕ BOT DETECTADO — timing uniforme demais';}
-}
-['fn','fe','ft','fm'].forEach(function(id,idx){
-  var el=document.getElementById(id);
-  el.addEventListener('focus',function(){
-    var now=performance.now();
-    if(lb2>0&&human){var j=now-lb2;fj.push(j);addLog('► Campo '+(idx+1)+' — jump: '+Math.round(j)+'ms','lh');}
-  });
-  el.addEventListener('blur',function(){if(human)lb2=performance.now();});
-  el.addEventListener('keydown',function(e){
-    if(!human)return;
-    keys++;var now=performance.now();
-    if(e.key==='Backspace'){bp++;addLog('⌫ Backspace #'+bp,'lh');}
-    if(lk>0){var d=now-lk;if(d<3000){iv.push(d);addBar(d,false);}}
-    lk=now;ui();
-    var b=document.getElementById('badge');b.className='badge bh';b.textContent='modo humano';
-    if(keys===1)addLog('Iniciou digitação','lh');
-  });
-});
-async function runBot(){
-  if(botOn)return;botOn=true;human=false;reset(false);
-  var b=document.getElementById('badge');b.className='badge bb';b.textContent='🤖 bot';
-  addLog('BOT iniciado — delay fixo 50ms/tecla','lb');
-  var data=[['fn','João da Silva Santos'],['fe','joao@bot.com'],['ft','11999999999'],['fm','Mensagem automática sem erros.']];
-  var D=50;
-  for(var i=0;i<data.length;i++){
-    var el=document.getElementById(data[i][0]);
-    var now=performance.now();if(lb2>0)fj.push(now-lb2);
-    await slp(D);
-    for(var j=0;j<data[i][1].length;j++){
-      keys++;var t=performance.now();
-      if(lk>0){var d=t-lk;iv.push(d);addBar(d,true);}
-      lk=t;el.value+=data[i][1][j];ui();await slp(D);
-    }
-    lb2=performance.now();await slp(D);
-  }
-  addLog('BOT concluído — CV: '+(mn(iv)>0?std(iv)/mn(iv):0).toFixed(3)+' (bot≈0)','lb');
-  b.textContent='🤖 bot finalizado';botOn=false;
-}
-function enviar(){
-  var sc=score();var st=document.getElementById('st');st.style.display='block';
-  if(iv.length<4){st.className='status warn';st.textContent='⚠ Digite mais antes de enviar!';return;}
-  if(sc>=45){st.className='status ok';st.textContent='✅ PASS ('+sc+'%) — Comportamento humano confirmado. Formulário aceito!';}
-  else if(sc>=20){st.className='status warn';st.textContent='⚠ CHALLENGE ('+sc+'%) — Verificação adicional necessária.';}
-  else{st.className='status err';st.textContent='🚫 BLOCK ('+sc+'%) — BOT detectado! Formulário rejeitado.';}
-  addLog('ENVIO → '+(sc>=45?'PASS':sc>=20?'CHALLENGE':'BLOCK')+' (score:'+sc+'%)','li');
-}
-function reset(cf){
-  if(cf===undefined)cf=true;
-  iv=[];lk=0;bp=0;keys=0;fj=[];lb2=0;tbars=[];botOn=false;human=true;
-  document.getElementById('tl').innerHTML='';
-  document.getElementById('mcv').textContent='—';
-  document.getElementById('mavg').textContent='—';
-  document.getElementById('mbp').textContent='0';
-  document.getElementById('mkeys').textContent='0';
-  document.getElementById('spct').textContent='0%';
-  document.getElementById('sbar').style.width='0%';
-  var v=document.getElementById('verd');v.style.cssText='background:#f5f5f5;color:#999';v.textContent='Aguardando digitação...';
-  document.getElementById('st').style.display='none';
-  document.getElementById('log').innerHTML='';
-  var b=document.getElementById('badge');b.className='badge bi';b.textContent='aguardando';
-  if(cf){['fn','fe','ft','fm'].forEach(function(id){document.getElementById(id).value='';});}
-}
-addLog('Sistema pronto. Digite ou clique em Simular Bot.','li');
-</script>
-</body></html>
+
+<!-- Scripts: coletor biometrico + logica da demo -->
+<script src="biometric-collector.js"></script>
+<script src="scripts/demo.js"></script>
+
+</body>
+</html>
