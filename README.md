@@ -6,15 +6,15 @@
 
 ## O Problema
 
-Os CAPTCHAs visuais tradicionais estao se tornando obsoletos. Modelos de visao computacional modernos resolvem esses desafios com precisao superior a humana.
+Os CAPTCHAs visuais tradicionais estão se tornando obsoletos. Modelos de visão computacional modernos resolvem esses desafios com precisao superior a humana.
 
-A questao central e: como distinguir um humano de uma maquina sem incomodar o usuario?
+A questao central é: como distinguir um humano de uma máquina sem incomodar o usuario?
 
-A resposta esta na imperfeicao humana.
+A resposta está na imperfeição humana.
 
 ---
 
-## A Solucao: Biometria Comportamental
+## A Solucão: Biometria Comportamental
 
 Humanos sao cronometricamente imperfeitos — e essa imperfeicao e sua assinatura unica.
 
