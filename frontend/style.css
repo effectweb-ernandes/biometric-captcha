@@ -1,0 +1,82 @@
+/* ============================================================
+   Biometric CAPTCHA - style.css
+   Estilos da demo de formulario protegido
+   ============================================================ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+
+body { background: #f0f2f5; padding: 20px 16px; min-height: 100vh; }
+
+h1 { font-size: 18px; font-weight: 600; color: #111; margin-bottom: 4px; }
+.sub { font-size: 13px; color: #888; margin-bottom: 20px; }
+
+/* Layout dois paineis */
+.layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 860px; margin: 0 auto; }
+@media (max-width: 620px) { .layout { grid-template-columns: 1fr; } }
+
+/* Cards */
+.card { background: #fff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 20px; }
+.card h2 { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
+
+/* Campos */
+.field { margin-bottom: 12px; }
+label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
+input[type=text], input[type=email], textarea {
+  width: 100%; padding: 9px 12px; font-size: 14px;
+  border: 1.5px solid #ddd; border-radius: 8px;
+  outline: none; background: #fff; color: #111;
+  transition: border-color .15s; display: block;
+}
+input[type=text]:focus, input[type=email]:focus, textarea:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79,70,229,.08);
+}
+textarea { min-height: 70px; resize: vertical; }
+
+/* Botoes */
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.btn { padding: 10px; font-size: 13px; font-weight: 500; border: none; border-radius: 8px; cursor: pointer; transition: opacity .15s; }
+.btn:hover { opacity: .85; }
+.btn-enviar { background: #4f46e5; color: #fff; }
+.btn-bot { background: #fff; color: #b91c1c; border: 1.5px solid #fca5a5; }
+.btn-reset { background: #f5f5f5; color: #555; border: 1px solid #ddd; grid-column: span 2; }
+
+/* Status */
+.status { padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-top: 10px; display: none; font-weight: 500; }
+.ok   { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+.err  { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+/* Metricas */
+.mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.mc { background: #f8f8f8; border-radius: 8px; padding: 10px 12px; }
+.ml { font-size: 11px; color: #999; margin-bottom: 2px; }
+.mv { font-size: 22px; font-weight: 700; color: #111; }
+.ms { font-size: 11px; color: #bbb; }
+
+/* Barra de score */
+.bar-bg { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin: 4px 0; }
+.bar { height: 100%; border-radius: 4px; width: 0%; transition: width .35s, background .35s; }
+.slabel { display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 2px; }
+
+/* Veredicto */
+.verdict { text-align: center; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 500; margin-top: 8px; background: #f5f5f5; color: #999; }
+
+/* Timeline */
+.tl { height: 58px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: flex-end; padding: 4px 6px; gap: 2px; overflow: hidden; margin: 6px 0; }
+.tb { border-radius: 2px 2px 0 0; min-width: 5px; }
+
+/* Log */
+.logbox { height: 90px; overflow-y: auto; background: #111; border-radius: 8px; padding: 7px 10px; font-family: monospace; font-size: 11px; margin-top: 8px; color: #94a3b8; }
+.lh { color: #4ade80; }
+.lb { color: #f87171; }
+.li { color: #94a3b8; }
+
+/* Badges */
+.badge { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+.bh { background: #dcfce7; color: #15803d; }
+.bb { background: #fee2e2; color: #dc2626; }
+.bi { background: #f1f5f9; color: #64748b; }
+
+/* Labels auxiliares */
+.aux-label { font-size: 11px; color: #bbb; margin-bottom: 3px; }
