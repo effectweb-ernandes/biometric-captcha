@@ -1,1 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biometric CAPTCHA - Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    body { background: #f5f5f5; display: flex; justify-content: center; padding: 40px 16px; }
+    .card { background: #fff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 32px; width: 100%; max-width: 480px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #111; }
+    .subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+    input, textarea { width: 100%; padding: 10px 14px; font-size: 14px; border: 1px solid #ddd; border-radius: 8px; outline: none; transition: border-color .2s; background: #fafafa; }
+    input:focus, textarea:focus { border-color: #4f46e5; background: #fff; }
+    textarea { resize: vertical; min-height: 80px; }
+    button[type=submit] { width: 100%; padding: 12px; font-size: 15px; font-weight: 500; background: #4f46e5; color: #fff; border: none; border-radius: 8px; cursor: pointer; margin-top: 8px; }
+    button[type=submit]:hover { background: #4338ca; }
+    button[type=submit]:disabled { background: #a5a5a5; cursor: not-allowed; }
+    .status { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+    .status.success { background: #f0fdf4; color: #166534; }
+    .status.error { background: #fef2f2; color: #991b1b; }
+    .status.warning { background: #fffbeb; color: #92400e; }
+    .note { font-size: 11px; color: #aaa; margin-top: 12px; text-align: center; }
+    .score-bar-wrap { height: 6px; background: #eee; border-radius: 3px; margin-top: 14px; overflow: hidden; }
+    .score-bar { height: 100%; border-radius: 3px; width: 0%; transition: width .4s, background .4s; }
+    .score-label { font-size: 11px; color: #aaa; margin-top: 4px; text-align: right; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Entre em contato</h1>
+  <p class="subtitle">Protegido por Biometric CAPTCHA.</p>
+  <form id="contact-form" novalidate>
+    <div class="field">
+      <label for="name">Nome completo</label>
+      <input type="text" id="name" name="name" placeholder="Joao Silva" autocomplete="name">
+    </div>
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" placeholder="joao@email.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label for="phone">Telefone</label>
+      <input type="tel" id="phone" name="phone" placeholder="(11) 99999-9999" autocomplete="tel">
+    </div>
+    <div class="field">
+      <label for="message">Mensagem</label>
+      <textarea id="message" name="message" placeholder="Como podemos ajudar?"></textarea>
+    </div>
+    <input type="hidden" id="captcha-token" name="captcha_token">
+    <button type="submit" id="submit-btn">Enviar mensagem</button>
+    <div class="score-bar-wrap"><div class="score-bar" id="score-bar"></div></div>
+    <p class="score-label" id="score-label">Aguardando digitacao...</p>
+    <div class="status" id="status"></div>
+    <p class="note">Protecao anti-bot ativa. Sem armazenamento de dados biometricos.</p>
+  </form>
+</div>
+<script src="biometric-collector.js"></script>
+<script>
+  const captcha = new BiometricCollector('#contact-form', { apiEndpoint: '/api/captcha/analyze' });
+  captcha.init();
 
+  document.querySelectorAll('input, textarea').forEach(el => {
+    el.addEventListener('keydown', () => {
+      setTimeout(() => {
+        const score = captcha.computeLocalScore();
+        const bar = document.getElementById('score-bar');
+        const label = document.getElementById('score-label');
+        bar.style.width = score + '%';
+        bar.style.background = score >= 65 ? '#16a34a' : score >= 35 ? '#d97706' : '#dc2626';
+        label.textContent = 'Score de humanidade: ' + score + '%';
+      }, 50);
+    });
+  });
+
+  document.getElementById('contact-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true; btn.textContent = 'Verificando...';
+    showStatus('', '');
+    try {
+      const token = await captcha.getToken();
+      if (!token) { showStatus('error', 'Falha na verificacao. Tente novamente.'); return; }
+      document.getElementById('captcha-token').value = token;
+      const payload = Object.fromEntries(new FormData(e.target).entries());
+      const res = await fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (res.status === 403) showStatus('error', 'Bot detectado. Acesso negado.');
+      else if (res.status === 202) showStatus('warning', 'Codigo de verificacao enviado para seu email.');
+      else if (res.ok) { showStatus('success', 'Mensagem enviada com sucesso!'); e.target.reset(); document.getElementById('score-bar').style.width='0%'; document.getElementById('score-label').textContent='Aguardando digitacao...'; }
+      else showStatus('error', 'Erro ao enviar. Tente novamente.');
+    } catch { showStatus('error', 'Erro de conexao.'); }
+    finally { btn.disabled = false; btn.textContent = 'Enviar mensagem'; }
+  });
+
+  function showStatus(type, msg) {
+    const el = document.getElementById('status');
+    el.className = 'status' + (type ? ' ' + type : '');
+    el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+  }
+</script>
+</body>
+</html>
