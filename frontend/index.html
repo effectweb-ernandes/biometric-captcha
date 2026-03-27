@@ -8,16 +8,20 @@
 </head>
 <body>
 
+
 <div style="max-width:860px;margin:0 auto 16px">
   <h1>Biometric CAPTCHA -- Demo</h1>
   <p class="sub">Digite normalmente ou simule um bot -- veja a analise em tempo real</p>
 </div>
 
+
 <div class="layout">
+
 
   <!-- Painel esquerdo: Formulario -->
   <div class="card">
     <h2>Formulario protegido <span id="badge" class="badge bi">aguardando</span></h2>
+
 
     <div class="field">
       <label for="fn">Nome completo</label>
@@ -34,164 +38,3 @@
     <div class="field">
       <label for="fm">Mensagem</label>
       <textarea id="fm" placeholder="Digite sua mensagem aqui..." spellcheck="false"></textarea>
-    </div>
-
-    <div class="btns">
-      <button class="btn btn-enviar" onclick="enviar()">Enviar</button>
-      <button class="btn btn-bot"    onclick="runBot()">Simular Bot</button>
-      <button class="btn btn-reset"  onclick="reset()">Resetar</button>
-    </div>
-
-    <div class="status" id="st"></div>
-  </div>
-
-  <!-- Painel direito: Analise biometrica -->
-  <div class="card">
-    <h2>Analise biometrica em tempo real</h2>
-
-    <div class="mgrid">
-      <div class="mc">
-        <div class="ml">Coef. variacao</div>
-        <div class="mv" id="mcv">--</div>
-        <div class="ms">humano &gt; 0.3</div>
-      </div>
-      <div class="mc">
-        <div class="ml">Media/tecla</div>
-        <div class="mv" id="mavg">--</div>
-        <div class="ms">ms</div>
-      </div>
-      <div class="mc">
-        <div class="ml">Backspaces</div>
-        <div class="mv" id="mbp">0</div>
-        <div class="ms">erros corrigidos</div>
-      </div>
-      <div class="mc">
-        <div class="ml">Teclas</div>
-        <div class="mv" id="mkeys">0</div>
-        <div class="ms">capturadas</div>
-      </div>
-    </div>
-
-    <p class="aux-label">Ritmo de digitacao (barras = intervalo entre teclas)</p>
-    <div class="tl" id="tl"></div>
-
-    <div class="slabel">
-      <span>Score de humanidade</span>
-      <span id="spct">0%</span>
-    </div>
-    <div class="bar-bg">
-      <div class="bar" id="sbar"></div>
-    </div>
-
-    <div class="verdict" id="verd">Aguardando digitacao...</div>
-
-    <p class="aux-label" style="margin-top:8px">Log de eventos</p>
-    <div class="logbox" id="log"></div>
-  </div>
-
-</div>
-
-<!-- Scripts -->
-<script src="scripts/biometric-collector.js"></script>
-<script src="scripts/demo.js"></script>
-
-</body>
-</html><!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Biometric CAPTCHA -- Demo</title>
-  <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-
-<div style="max-width:860px;margin:0 auto 16px">
-  <h1>Biometric CAPTCHA -- Demo</h1>
-  <p class="sub">Digite normalmente ou simule um bot -- veja a analise em tempo real</p>
-</div>
-
-<div class="layout">
-
-  <!-- Painel esquerdo: Formulario -->
-  <div class="card">
-    <h2>Formulario protegido <span id="badge" class="badge bi">aguardando</span></h2>
-
-    <div class="field">
-      <label for="fn">Nome completo</label>
-      <input type="text" id="fn" placeholder="Joao Silva" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="field">
-      <label for="fe">Email</label>
-      <input type="email" id="fe" placeholder="joao@email.com" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="field">
-      <label for="ft">Telefone</label>
-      <input type="text" id="ft" placeholder="(11) 99999-9999" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="field">
-      <label for="fm">Mensagem</label>
-      <textarea id="fm" placeholder="Digite sua mensagem aqui..." spellcheck="false"></textarea>
-    </div>
-
-    <div class="btns">
-      <button class="btn btn-enviar" onclick="enviar()">Enviar</button>
-      <button class="btn btn-bot"    onclick="runBot()">Simular Bot</button>
-      <button class="btn btn-reset"  onclick="reset()">Resetar</button>
-    </div>
-
-    <div class="status" id="st"></div>
-  </div>
-
-  <!-- Painel direito: Analise biometrica -->
-  <div class="card">
-    <h2>Analise biometrica em tempo real</h2>
-
-    <div class="mgrid">
-      <div class="mc">
-        <div class="ml">Coef. variacao</div>
-        <div class="mv" id="mcv">--</div>
-        <div class="ms">humano &gt; 0.3</div>
-      </div>
-      <div class="mc">
-        <div class="ml">Media/tecla</div>
-        <div class="mv" id="mavg">--</div>
-        <div class="ms">ms</div>
-      </div>
-      <div class="mc">
-        <div class="ml">Backspaces</div>
-        <div class="mv" id="mbp">0</div>
-        <div class="ms">erros corrigidos</div>
-      </div>
-      <div class="mc">
-        <div class="ml">Teclas</div>
-        <div class="mv" id="mkeys">0</div>
-        <div class="ms">capturadas</div>
-      </div>
-    </div>
-
-    <p class="aux-label">Ritmo de digitacao (barras = intervalo entre teclas)</p>
-    <div class="tl" id="tl"></div>
-
-    <div class="slabel">
-      <span>Score de humanidade</span>
-      <span id="spct">0%</span>
-    </div>
-    <div class="bar-bg">
-      <div class="bar" id="sbar"></div>
-    </div>
-
-    <div class="verdict" id="verd">Aguardando digitacao...</div>
-
-    <p class="aux-label" style="margin-top:8px">Log de eventos</p>
-    <div class="logbox" id="log"></div>
-  </div>
-
-</div>
-
-<!-- Scripts: coletor biometrico + logica da demo -->
-<script src="biometric-collector.js"></script>
-<script src="scripts/demo.js"></script>
-
-</body>
-</html>
