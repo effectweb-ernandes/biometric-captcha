@@ -1,68 +1,74 @@
 /**
- * BiometricCollector.js v2.0
+ * BiometricCollector.js v2.1
  * Coleta passiva de sinais comportamentais para deteccao de bots.
  *
- * Novidades v2.0:
- *  - Deteccao de copia e cola (paste sem digitacao previa)
- *  - Tempo total de foco por campo
- *  - Suporte a eventos de toque mobile (touchstart/touchend)
- *  - Deteccao de autofill do navegador
- *  - Score de confianca mais granular
- *
- * Uso:
- *   const captcha = new BiometricCollector('#form', { apiEndpoint: '/api/captcha/analyze' });
- *   captcha.init();
- *   const token = await captcha.getToken();
+ * Novidades v2.1:
+ *  - Deteccao avancada de autocomplete/autofill do browser
+ *    distinguindo entre: humano com autocomplete vs bot que injeta valores
+ *  - Crosscheck entre campos: se todos foram preenchidos sem keystroke
+ *    mas houve clique/mouse/tempo adequado, eh considerado autocomplete humano
+ *  - Medicao de tempo entre foco e preenchimento por campo
+ *  - Deteccao de inputType para diferenciar autocomplete de injecao direta
  */
 class BiometricCollector {
   constructor(formSelector, options = {}) {
     this.form = document.querySelector(formSelector);
     if (!this.form) throw new Error('Formulario nao encontrado: ' + formSelector);
     this.options = {
-      apiEndpoint: options.apiEndpoint || '/api/captcha/analyze',
-      minKeystrokes: options.minKeystrokes || 6,
+      apiEndpoint:    options.apiEndpoint    || '/api/captcha/analyze',
+      minKeystrokes:  options.minKeystrokes  || 6,
       sessionTimeout: options.sessionTimeout || 30 * 60 * 1000,
     };
 
     // Keystroke
-    this._keystrokeIntervals = [];
-    this._keystrokeTimestamps = [];
-    this._backspaceCount = 0;
-    this._deleteCount = 0;
-    this._lastKeyTime = null;
+    this._keystrokeIntervals   = [];
+    this._keystrokeTimestamps  = [];
+    this._backspaceCount       = 0;
+    this._deleteCount          = 0;
+    this._lastKeyTime          = null;
 
     // Mouse
     this._mouseVelocities = [];
-    this._mouseMovements = [];
-    this._clickEvents = [];
-    this._lastMousePos = null;
-    this._lastMouseTime = null;
+    this._mouseMovements  = [];
+    this._clickEvents     = [];
+    this._lastMousePos    = null;
+    this._lastMouseTime   = null;
 
     // Touch (mobile)
-    this._touchEvents = [];
+    this._touchEvents     = [];
     this._touchVelocities = [];
-    this._lastTouchPos = null;
-    this._lastTouchTime = null;
+    this._lastTouchPos    = null;
+    this._lastTouchTime   = null;
 
     // Campos
-    this._fieldTransitions = [];
-    this._fieldFocusDurations = {}; // tempo total de foco por campo
-    this._fieldFocusStart = {};     // quando o foco iniciou por campo
-    this._activeField = null;
-    this._focusCount = 0;
+    this._fieldTransitions    = [];
+    this._fieldFocusDurations = {};
+    this._fieldFocusStart     = {};
+    this._activeField         = null;
+    this._focusCount          = 0;
+    this._fieldTypedBefore    = {};
+
+    // Autocomplete / Autofill — core desta versao
+    this._autocompleteEvents  = []; // {fieldIdx, fillTime, hadMouseBefore, hadKeystrokeBefore, inputType, suspicious}
+    this._fieldValueAtFocus   = {}; // valor do campo quando recebeu foco
+    this._fieldFillTime       = {}; // quando o campo foi preenchido via input sem keydown
+    this._clickBeforeInput    = {}; // se houve click/touch antes do input em cada campo
+    this._lastClickTime       = 0;
+    this._lastTouchEndTime    = 0;
 
     // Comportamento suspeito
-    this._pasteCount = 0;
-    this._pasteWithoutTyping = 0; // paste em campo que nao teve digitacao previa
-    this._autofillDetected = false;
-    this._fieldTypedBefore = {};  // se o campo ja recebeu digitacao manual
+    this._pasteCount          = 0;
+    this._pasteWithoutTyping  = 0;
+    this._autofillDetected    = false;
+    this._autofillIsHuman     = false; // autocomplete com evidencias de interacao humana
+    this._botInjectionSuspect = false; // preenchimento programatico sem nenhuma interacao
 
     // Scroll
     this._scrollEvents = [];
 
     // Sessao
-    this._sessionStart = Date.now();
-    this._boundHandlers = {};
+    this._sessionStart   = Date.now();
+    this._boundHandlers  = {};
   }
 
   // ── Inicializacao ──────────────────────────────────────────────────────────
@@ -72,7 +78,7 @@ class BiometricCollector {
     this._attachMouseListeners();
     this._attachTouchListeners();
     this._attachScrollListeners();
-    this._detectAutofill();
+    this._monitorAutocomplete();
     return this;
   }
 
@@ -82,36 +88,124 @@ class BiometricCollector {
     });
   }
 
+  // ── Autocomplete Monitor ──────────────────────────────────────────────────
+  // Esta e a parte central da v2.1:
+  // Observa quando um campo muda de valor SEM evento keydown precedente,
+  // e classifica se foi autocomplete humano ou injecao de bot.
+
+  _monitorAutocomplete() {
+    const fields = this.form.querySelectorAll('input, textarea, select');
+
+    fields.forEach((field, idx) => {
+      // Guarda o valor no momento do foco
+      field.addEventListener('focus', () => {
+        this._fieldValueAtFocus[idx] = field.value;
+        this._clickBeforeInput[idx]  = (Date.now() - this._lastClickTime) < 2000
+                                    || (Date.now() - this._lastTouchEndTime) < 2000;
+      });
+
+      // Monitora mudancas de valor via evento 'input'
+      field.addEventListener('input', (e) => {
+        const now = Date.now();
+
+        // Se o campo mudou mas nao houve keydown recente (< 200ms),
+        // provavelmente foi autocomplete ou injecao
+        const msSinceLastKey = this._lastKeyTime
+          ? (performance.now() - this._lastKeyTime)
+          : Infinity;
+
+        const valueChangedWithoutKey = msSinceLastKey > 200 && field.value !== this._fieldValueAtFocus[idx];
+
+        if (valueChangedWithoutKey && field.value.length > 0) {
+          this._autofillDetected = true;
+
+          const inputType = e.inputType || 'unknown';
+          // inputType === 'insertReplacementText' ou 'insertFromAutofill'
+          // indicam autocomplete legitimo do browser
+          const isLegitimateAutofill = [
+            'insertReplacementText',
+            'insertFromAutofill',
+            'insertFromPaste',  // usuario colou manualmente
+          ].includes(inputType);
+
+          // Evidencias de que eh humano usando autocomplete:
+          // 1. Houve clique/toque antes (usuario clicou na sugestao)
+          // 2. O campo estava em foco por tempo adequado (> 300ms)
+          // 3. inputType indica autocomplete legitimo do browser
+          // 4. Ja houve keystroke em ALGUM campo da sessao
+          const focusDuration = this._fieldFocusStart[idx]
+            ? (performance.now() - this._fieldFocusStart[idx])
+            : 0;
+
+          const hasHumanEvidence =
+            this._clickBeforeInput[idx]           ||  // clicou antes
+            focusDuration > 300                   ||  // ficou no campo por tempo adequado
+            isLegitimateAutofill                  ||  // inputType correto
+            this._keystrokeTimestamps.length > 0;     // ja digitou em outro campo
+
+          this._autocompleteEvents.push({
+            fieldIdx:          idx,
+            fillTimeMs:        now,
+            focusDurationMs:   Math.round(focusDuration),
+            inputType,
+            hadClickBefore:    this._clickBeforeInput[idx] || false,
+            hadKeystroke:      this._keystrokeTimestamps.length > 0,
+            isLegitimateAutofill,
+            isHuman:           hasHumanEvidence,
+            suspicious:        !hasHumanEvidence,
+          });
+
+          if (hasHumanEvidence) {
+            this._autofillIsHuman = true;
+          } else {
+            // Sem nenhuma evidencia de interacao humana = suspeito de bot
+            this._botInjectionSuspect = true;
+          }
+        }
+      });
+    });
+
+    // Verifica campos pre-preenchidos apos 800ms (autofill no carregamento da pagina)
+    setTimeout(() => {
+      const fields2 = this.form.querySelectorAll('input, textarea');
+      let preFilledCount = 0;
+      fields2.forEach(field => {
+        if (field.value && field.value.length > 0) preFilledCount++;
+      });
+
+      if (preFilledCount > 0 && this._keystrokeTimestamps.length === 0) {
+        // Campos pre-preenchidos sem nenhuma interacao ainda
+        // Pode ser autofill legitimo do browser no carregamento
+        // Marca como autofill mas nao como bot (aguarda mais evidencias)
+        this._autofillDetected = true;
+      }
+    }, 800);
+  }
+
   // ── Formulario ─────────────────────────────────────────────────────────────
 
   _attachFormListeners() {
     this.form.querySelectorAll('input, textarea, select').forEach((field, idx) => {
-      const id = field.id || field.name || ('field_' + idx);
-
       const onFocus = () => {
         this._focusCount++;
         const now = performance.now();
-
-        // Transicao entre campos
         if (this._activeField !== null) {
           const prev = this._fieldFocusStart[this._activeField];
           if (prev) {
-            const dur = now - prev;
             if (!this._fieldFocusDurations[this._activeField]) this._fieldFocusDurations[this._activeField] = 0;
-            this._fieldFocusDurations[this._activeField] += dur;
+            this._fieldFocusDurations[this._activeField] += now - prev;
           }
           this._fieldTransitions.push({ from: this._activeField, to: idx, ts: now });
         }
-        this._activeField = idx;
+        this._activeField       = idx;
         this._fieldFocusStart[idx] = now;
       };
 
       const onBlur = () => {
         const now = performance.now();
         if (this._activeField === idx && this._fieldFocusStart[idx]) {
-          const dur = now - this._fieldFocusStart[idx];
           if (!this._fieldFocusDurations[idx]) this._fieldFocusDurations[idx] = 0;
-          this._fieldFocusDurations[idx] += dur;
+          this._fieldFocusDurations[idx] += now - this._fieldFocusStart[idx];
           delete this._fieldFocusStart[idx];
         }
         this._activeField = null;
@@ -120,10 +214,8 @@ class BiometricCollector {
       const onKeydown = (e) => {
         const now = performance.now();
         this._fieldTypedBefore[idx] = true;
-
         if (e.key === 'Backspace') this._backspaceCount++;
-        if (e.key === 'Delete') this._deleteCount++;
-
+        if (e.key === 'Delete')    this._deleteCount++;
         if (this._lastKeyTime !== null) {
           const d = now - this._lastKeyTime;
           if (d < 5000) this._keystrokeIntervals.push(d);
@@ -134,30 +226,18 @@ class BiometricCollector {
 
       const onPaste = () => {
         this._pasteCount++;
-        // Se o campo nao teve digitacao manual antes do paste, eh suspeito
-        if (!this._fieldTypedBefore[idx]) {
-          this._pasteWithoutTyping++;
-        }
+        if (!this._fieldTypedBefore[idx]) this._pasteWithoutTyping++;
       };
 
-      // Detecta autofill via mudanca de valor sem evento de input
-      const onInput = (e) => {
-        if (e.inputType === undefined && field.value.length > 0) {
-          this._autofillDetected = true;
-        }
-      };
-
-      field.addEventListener('focus', onFocus);
-      field.addEventListener('blur', onBlur);
+      field.addEventListener('focus',   onFocus);
+      field.addEventListener('blur',    onBlur);
       field.addEventListener('keydown', onKeydown);
-      field.addEventListener('paste', onPaste);
-      field.addEventListener('input', onInput);
+      field.addEventListener('paste',   onPaste);
 
-      this._boundHandlers['focus_' + idx] = { el: field, event: 'focus', fn: onFocus };
-      this._boundHandlers['blur_' + idx]  = { el: field, event: 'blur',  fn: onBlur };
-      this._boundHandlers['key_' + idx]   = { el: field, event: 'keydown', fn: onKeydown };
-      this._boundHandlers['paste_' + idx] = { el: field, event: 'paste', fn: onPaste };
-      this._boundHandlers['input_' + idx] = { el: field, event: 'input', fn: onInput };
+      this._boundHandlers['focus_'   + idx] = { el: field, event: 'focus',   fn: onFocus };
+      this._boundHandlers['blur_'    + idx] = { el: field, event: 'blur',    fn: onBlur };
+      this._boundHandlers['key_'     + idx] = { el: field, event: 'keydown', fn: onKeydown };
+      this._boundHandlers['paste_'   + idx] = { el: field, event: 'paste',   fn: onPaste };
     });
   }
 
@@ -172,43 +252,44 @@ class BiometricCollector {
         if (dt >= RATE) {
           const dx = e.clientX - this._lastMousePos.x;
           const dy = e.clientY - this._lastMousePos.y;
-          const vel = Math.sqrt(dx * dx + dy * dy) / dt;
-          this._mouseVelocities.push(vel);
+          this._mouseVelocities.push(Math.sqrt(dx*dx + dy*dy) / dt);
           this._mouseMovements.push({ x: e.clientX, y: e.clientY, t: now });
-          this._lastMousePos = { x: e.clientX, y: e.clientY };
+          this._lastMousePos  = { x: e.clientX, y: e.clientY };
           this._lastMouseTime = now;
         }
       } else {
-        this._lastMousePos = { x: e.clientX, y: e.clientY };
+        this._lastMousePos  = { x: e.clientX, y: e.clientY };
         this._lastMouseTime = now;
       }
     };
     const onClick = (e) => {
+      this._lastClickTime = Date.now();
       this._clickEvents.push({ x: e.clientX, y: e.clientY, t: performance.now(), tag: e.target.tagName });
     };
-    document.addEventListener('mousemove', onMove, { passive: true });
-    document.addEventListener('click', onClick, { passive: true });
-    this._boundHandlers['mousemove'] = { el: document, event: 'mousemove', fn: onMove, opts: { passive: true } };
+    document.addEventListener('mousemove', onMove,   { passive: true });
+    document.addEventListener('click',     onClick,  { passive: true });
+    this._boundHandlers['mousemove'] = { el: document, event: 'mousemove', fn: onMove,  opts: { passive: true } };
     this._boundHandlers['click']     = { el: document, event: 'click',     fn: onClick, opts: { passive: true } };
   }
 
-  // ── Touch (mobile) ─────────────────────────────────────────────────────────
+  // ── Touch ──────────────────────────────────────────────────────────────────
 
   _attachTouchListeners() {
     const onTouchStart = (e) => {
       const t = e.touches[0];
-      this._lastTouchPos = { x: t.clientX, y: t.clientY };
+      this._lastTouchPos  = { x: t.clientX, y: t.clientY };
       this._lastTouchTime = performance.now();
       this._touchEvents.push({ type: 'start', x: t.clientX, y: t.clientY, t: this._lastTouchTime });
     };
     const onTouchEnd = (e) => {
       const now = performance.now();
+      this._lastTouchEndTime = Date.now();
       if (this._lastTouchPos && this._lastTouchTime) {
         const t = e.changedTouches[0];
         const dx = t.clientX - this._lastTouchPos.x;
         const dy = t.clientY - this._lastTouchPos.y;
         const dt = now - this._lastTouchTime;
-        const vel = dt > 0 ? Math.sqrt(dx * dx + dy * dy) / dt : 0;
+        const vel = dt > 0 ? Math.sqrt(dx*dx + dy*dy) / dt : 0;
         this._touchVelocities.push(vel);
         this._touchEvents.push({ type: 'end', x: t.clientX, y: t.clientY, t: now, vel });
       }
@@ -225,19 +306,6 @@ class BiometricCollector {
     const fn = (e) => this._scrollEvents.push({ dy: e.deltaY, t: performance.now() });
     document.addEventListener('wheel', fn, { passive: true });
     this._boundHandlers['scroll'] = { el: document, event: 'wheel', fn, opts: { passive: true } };
-  }
-
-  // ── Autofill ───────────────────────────────────────────────────────────────
-
-  _detectAutofill() {
-    // Checa apos 500ms se campos ja foram preenchidos sem interacao
-    setTimeout(() => {
-      this.form.querySelectorAll('input, textarea').forEach(field => {
-        if (field.value && field.value.length > 0 && this._keystrokeTimestamps.length === 0) {
-          this._autofillDetected = true;
-        }
-      });
-    }, 500);
   }
 
   // ── Estatisticas ───────────────────────────────────────────────────────────
@@ -261,35 +329,44 @@ class BiometricCollector {
     const ks = this._stats(this._keystrokeIntervals);
     const mv = this._stats(this._mouseVelocities);
     const tv = this._stats(this._touchVelocities);
-    const ft = this._stats(this._fieldTransitions.map(t => t.ts));
+    const fd = this._stats(Object.values(this._fieldFocusDurations));
 
-    // Tempo medio de foco por campo (ms)
-    const focusDurations = Object.values(this._fieldFocusDurations);
-    const fd = this._stats(focusDurations);
+    // Classifica o cenario de autocomplete
+    const totalAutofillEvents    = this._autocompleteEvents.length;
+    const humanAutofillCount     = this._autocompleteEvents.filter(e => e.isHuman).length;
+    const suspiciousAutofillCount = this._autocompleteEvents.filter(e => e.suspicious).length;
 
     return {
       session: {
-        duration:         Date.now() - this._sessionStart,
-        keystrokeCount:   this._keystrokeTimestamps.length,
-        backspaceCount:   this._backspaceCount,
-        deleteCount:      this._deleteCount,
-        pasteCount:       this._pasteCount,
-        pasteWithoutTyping: this._pasteWithoutTyping,
-        focusCount:       this._focusCount,
-        fieldTransitions: this._fieldTransitions.length,
-        autofillDetected: this._autofillDetected,
-        isMobile:         this._touchEvents.length > 0,
+        duration:              Date.now() - this._sessionStart,
+        keystrokeCount:        this._keystrokeTimestamps.length,
+        backspaceCount:        this._backspaceCount,
+        deleteCount:           this._deleteCount,
+        pasteCount:            this._pasteCount,
+        pasteWithoutTyping:    this._pasteWithoutTyping,
+        focusCount:            this._focusCount,
+        fieldTransitions:      this._fieldTransitions.length,
+        isMobile:              this._touchEvents.length > 0,
+
+        // Autocomplete
+        autofillDetected:      this._autofillDetected,
+        autofillIsHuman:       this._autofillIsHuman,
+        botInjectionSuspect:   this._botInjectionSuspect,
+        totalAutofillEvents,
+        humanAutofillCount,
+        suspiciousAutofillCount,
+        autocompleteEvents:    this._autocompleteEvents,
       },
-      keystroke: { ...ks, humanProbability: Math.min(ks.cv * 2, 1) },
-      mouse:     { ...mv, sampleCount: this._mouseVelocities.length, clickCount: this._clickEvents.length },
-      touch:     { ...tv, eventCount: this._touchEvents.length },
-      fieldTransitions:  { ...ft, events: this._fieldTransitions },
+      keystroke:          { ...ks, humanProbability: Math.min(ks.cv * 2, 1) },
+      mouse:              { ...mv, sampleCount: this._mouseVelocities.length, clickCount: this._clickEvents.length },
+      touch:              { ...tv, eventCount: this._touchEvents.length },
+      fieldTransitions:   { events: this._fieldTransitions },
       fieldFocusDuration: { ...fd, perField: this._fieldFocusDurations },
-      scroll:    { eventCount: this._scrollEvents.length },
+      scroll:             { eventCount: this._scrollEvents.length },
     };
   }
 
-  // ── Score local (0-100) ────────────────────────────────────────────────────
+  // ── Score local ────────────────────────────────────────────────────────────
 
   computeLocalScore() {
     const m = this.getMetrics();
@@ -309,7 +386,6 @@ class BiometricCollector {
 
     // 4. Mouse ou Touch (15 pts)
     if (m.session.isMobile) {
-      // Mobile: variancia de velocidade de toque
       if (m.touch.cv > 0.3) score += 15; else if (m.touch.cv > 0.1) score += 8;
     } else {
       if (m.mouse.sampleCount > 20) {
@@ -318,14 +394,23 @@ class BiometricCollector {
     }
 
     // 5. Transicoes entre campos (10 pts)
-    const ftStd = this._stats(this._fieldTransitions.map((_, i) => i > 0
-      ? this._fieldTransitions[i].ts - this._fieldTransitions[i-1].ts : 0
-    ).filter(d => d > 0)).std;
-    if (ftStd > 300) score += 10; else if (ftStd > 100) score += 6;
+    const transitions = this._fieldTransitions;
+    if (transitions.length > 1) {
+      const gaps = transitions.slice(1).map((t, i) => t.ts - transitions[i].ts);
+      const gapStd = this._stats(gaps).std;
+      if (gapStd > 300) score += 10; else if (gapStd > 100) score += 6;
+    }
 
     // Penalidades
-    if (m.session.pasteWithoutTyping > 0) score = Math.max(0, score - 25);
-    if (m.session.autofillDetected)        score = Math.max(0, score - 10);
+    if (m.session.pasteWithoutTyping > 0)  score = Math.max(0, score - 25);
+
+    // Autocomplete: so penaliza se for SUSPEITO de bot
+    // Autocomplete humano legitimo NAO penaliza
+    if (m.session.botInjectionSuspect && !m.session.autofillIsHuman) {
+      score = Math.max(0, score - 35); // penalidade forte
+    } else if (m.session.autofillDetected && m.session.autofillIsHuman) {
+      score += 5; // bonus: autocomplete humano com evidencia de interacao
+    }
 
     return Math.min(score, 100);
   }
