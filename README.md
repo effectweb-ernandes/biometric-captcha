@@ -71,7 +71,11 @@ Humano: campo1 -432ms- campo2 -891ms- campo3  <- variância natural = APROVADO
 ```
 biometric-captcha/
 ├── frontend/
-│   ├── biometric-collector.js   ← Script drop-in para o seu site
+│   ├── css/
+│   │   └── style.css            ← Estilos da página de demonstração
+│   ├── scripts/
+│   │   ├── biometric-collector.js   ← Script drop-in para o seu site
+│   │   └── demo.js              ← Script de demonstração
 │   └── index.html               ← Exemplo completo de integração
 ├── backend/
 │   └── server.js                ← API Node.js + Express + JWT
@@ -102,7 +106,7 @@ psql -U postgres -d seu_banco -f database/schema.sql
 ### 3. Frontend
 
 ```html
-<script src="/biometric-collector.js"></script>
+<script src="/scripts/biometric-collector.js"></script>
 <script>
   const captcha = new BiometricCollector('#seu-formulario', {
     apiEndpoint: '/api/captcha/analyze'
