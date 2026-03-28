@@ -1,106 +1,106 @@
 # Biometric CAPTCHA
 
-> Passive behavioral biometrics for bot detection — no images, no puzzles, no friction for the user.
+> Detecção de bots por biometria comportamental passiva — sem imagens, sem puzzles, sem fricção para o usuário.
 
 ---
 
-## The Problem
+## O Problema
 
-Traditional visual CAPTCHAs are becoming obsolete. Modern computer vision models solve these challenges with accuracy surpassing humans.
+Os CAPTCHAs visuais tradicionais estão se tornando obsoletos. Modelos de visão computacional modernos resolvem esses desafios com precisão superior à humana.
 
-The core question is: how do you tell a human apart from a machine without annoying the user?
+A questão central é: como distinguir um humano de uma máquina sem incomodar o usuário?
 
-The answer lies in human imperfection.
+A resposta está na imperfeição humana.
 
 ---
 
-## The Solution: Behavioral Biometrics
+## A Solução: Biometria Comportamental
 
-Humans are chronometrically imperfect — and that imperfection is their unique signature.
+Humanos são cronometricamente imperfeitos — e essa imperfeição é sua assinatura única.
 
-While a bot fills out a form with millisecond-perfect timing, a human hesitates, makes mistakes, corrects them, speeds up and slows down in an organic and unpredictable way.
+Enquanto um bot preenche um formulário com timing milimetricamente uniforme, um humano hesita, erra, corrige, acelera e desacelera de forma orgânica e imprevisível.
 
 ```
-Bot:    field1 -50ms- field2 -50ms- field3    <- perfect timing = SUSPICIOUS
-Human:  field1 -432ms- field2 -891ms- field3  <- natural variance = APPROVED
+Bot:    campo1 -50ms- campo2 -50ms- campo3    <- timing perfeito = SUSPEITO
+Humano: campo1 -432ms- campo2 -891ms- campo3  <- variância natural = APROVADO
 ```
 
 ---
 
-## How It Works
+## Como Funciona
 
-1. `BiometricCollector.js` passively captures keyboard, mouse, and scroll events
-2. On form submission, the metrics are sent to the backend
-3. The backend analyzes the data and returns a signed JWT with the decision
-4. The JWT is validated before the form is processed
+1. `BiometricCollector.js` captura eventos de teclado, mouse e scroll de forma passiva
+2. Na submissão do formulário, as métricas são enviadas ao backend
+3. O backend analisa os dados e retorna um JWT assinado com a decisão
+4. O JWT é validado antes de processar o formulário
 
-**Possible decisions:** PASS (score > 45) | CHALLENGE (20–45) | BLOCK (< 20)
+**Decisões possíveis:** PASS (score > 45) | CHALLENGE (20–45) | BLOCK (< 20)
 
 ---
 
-## Collected Metrics
+## Métricas Coletadas
 
-| Signal | What it reveals | Weight |
+| Sinal | O que revela | Peso |
 |---|---|---|
-| Keystroke variance | Bots have perfect timing (CV ≈ 0) | 35% |
-| Average typing speed | Bots type above 1,000 WPM | 20% |
-| Backspaces used | Bots never make typos | 20% |
-| Mouse variance | Bots move in a perfectly straight line | 15% |
-| Field transition interval | Bots switch fields in fixed time | 10% |
+| Variância entre teclas | Bots têm timing perfeito (CV ≈ 0) | 35% |
+| Velocidade média de digitação | Bots digitam acima de 1.000 WPM | 20% |
+| Backspaces usados | Bots nunca erram ao digitar | 20% |
+| Variância do mouse | Bots movem em linha reta perfeita | 15% |
+| Intervalo entre campos | Bots mudam de campo em tempo fixo | 10% |
 
 ---
 
-## Detection Flags
+## Flags de Detecção
 
-| Flag | Description |
+| Flag | Descrição |
 |---|---|
-| `KEYSTROKE_TOO_UNIFORM` | No variation in keystroke interval |
-| `TYPING_TOO_FAST` | Speed physically impossible for humans |
-| `NO_TYPING_ERRORS` | No backspaces in long text |
-| `MOUSE_TOO_LINEAR` | Mouse movement in a perfectly straight line |
-| `FIELD_TRANSITIONS_TOO_UNIFORM` | Fixed time when switching fields |
-| `PASTE_WITHOUT_TYPING` | Pasted everything without typing |
-| `IMPOSSIBLE_SPEED` | Data volume in impossible time |
-| `ARTIFICIAL_NOISE_SUSPECTED` | Simulated white noise detected |
-| `CLIENT_SCORE_TAMPERED` | Client-side score has been tampered |
+| `KEYSTROKE_TOO_UNIFORM` | Intervalo entre teclas sem variação |
+| `TYPING_TOO_FAST` | Velocidade fisicamente impossível para humanos |
+| `NO_TYPING_ERRORS` | Nenhum backspace em texto longo |
+| `MOUSE_TOO_LINEAR` | Movimento de mouse em linha reta perfeita |
+| `FIELD_TRANSITIONS_TOO_UNIFORM` | Tempo fixo ao mudar de campo |
+| `PASTE_WITHOUT_TYPING` | Colou tudo sem digitar nada |
+| `IMPOSSIBLE_SPEED` | Volume de dados em tempo impossível |
+| `ARTIFICIAL_NOISE_SUSPECTED` | Ruído branco simulado detectado |
+| `CLIENT_SCORE_TAMPERED` | Score do cliente adulterado |
 
 ---
 
-## Project Structure
+## Estrutura do Projeto
 
 ```
 biometric-captcha/
 ├── frontend/
 │   ├── css/
-│   │   └── style.css            ← Demo page styles
+│   │   └── style.css            ← Estilos da página de demonstração
 │   ├── scripts/
-│   │   ├── biometric-collector.js   ← Drop-in script for your site
-│   │   └── demo.js              ← Demo script
-│   └── index.html               ← Full integration example
+│   │   ├── biometric-collector.js   ← Script drop-in para o seu site
+│   │   └── demo.js              ← Script de demonstração
+│   └── index.html               ← Exemplo completo de integração
 ├── backend/
-│   └── server.js                ← Node.js + Express + JWT API
+│   └── server.js                ← API Node.js + Express + JWT
 ├── database/
-│   └── schema.sql               ← PostgreSQL schema with views and functions
+│   └── schema.sql               ← Schema PostgreSQL com views e funções
 └── README.md
 ```
 
 ---
 
-## Quick Setup
+## Instalação Rápida
 
 ### 1. Backend
 
 ```bash
 cd backend
 npm install express jsonwebtoken helmet cors express-rate-limit
-export JWT_SECRET="your-secret-here"
+export JWT_SECRET="seu-segredo-aqui"
 node server.js
 ```
 
-### 2. Database
+### 2. Banco de dados
 
 ```bash
-psql -U postgres -d your_database -f database/schema.sql
+psql -U postgres -d seu_banco -f database/schema.sql
 ```
 
 ### 3. Frontend
@@ -108,70 +108,70 @@ psql -U postgres -d your_database -f database/schema.sql
 ```html
 <script src="/scripts/biometric-collector.js"></script>
 <script>
-  const captcha = new BiometricCollector('#your-form', {
+  const captcha = new BiometricCollector('#seu-formulario', {
     apiEndpoint: '/api/captcha/analyze'
   });
   captcha.init();
 
-  document.querySelector('#your-form').addEventListener('submit', async (e) => {
+  document.querySelector('#seu-formulario').addEventListener('submit', async (e) => {
     e.preventDefault();
     const token = await captcha.getToken();
-    // Include the token in your request — your backend validates it before processing
+    // Inclua o token na requisição — seu backend valida antes de processar
   });
 </script>
 ```
 
-### 4. Validate the token on the backend
+### 4. Validar o token no backend
 
 ```js
 const jwt = require('jsonwebtoken');
 
-function validateCaptcha(token) {
+function validarCaptcha(token) {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
-  if (decoded.decision === 'BLOCK') throw new Error('Bot detected');
+  if (decoded.decision === 'BLOCK') throw new Error('Bot detectado');
   return decoded; // { decision, score, flags }
 }
 ```
 
 ---
 
-## Why Does It Work?
+## Por que funciona?
 
-The fundamental principle is the **perfection paradox**: chronometrically perfect behavior is immediately suspicious.
+O princípio fundamental é o **paradoxo da perfeição**: comportamento cronometricamente perfeito é imediatamente suspeito.
 
-Sophisticated bots that attempt to simulate human variance generally fail on two fronts:
+Bots sofisticados que tentam simular variância humana geralmente falham em dois aspectos:
 
-- **Distribution**: white noise is detectable — humans follow specific distributions tied to cognition and biomechanics
-- **Autocorrelation**: human typing speed has memory — a pattern impossible to fake in real time
+- **Distribuição**: ruído branco é detectável — humanos seguem distribuições específicas ligadas à cognição e à biomecânica
+- **Autocorrelação**: a velocidade de digitação humana tem memória — padrão impossível de falsificar em tempo real
 
 ---
 
-## Privacy & GDPR/LGPD
+## Privacidade e LGPD
 
-- Only derived metrics are sent to the server (averages, standard deviations)
-- Data can be anonymized before persisting to the database
-- The schema includes a configurable automatic cleanup function
-- Document the data collection in your Privacy Policy
+- Apenas métricas derivadas são enviadas ao servidor (médias, desvios padrão)
+- Os dados são anonimizáveis antes de persistir no banco
+- O schema inclui função de limpeza automática configurável
+- Documente a coleta na sua Política de Privacidade
 
 ---
 
 ## Roadmap
 
-- [ ] SDK for React and Vue
-- [ ] Mobile support (touch pressure, accelerometer)
-- [ ] ML model trained on PostgreSQL logs
-- [ ] Device fingerprinting (WebGL, canvas, fonts)
-- [ ] Real-time monitoring dashboard
-- [ ] Integration with IP blocklists (AbuseIPDB)
-- [ ] Publish to npm
+- [ ] SDK para React e Vue
+- [ ] Suporte a mobile (pressão de toque, acelerômetro)
+- [ ] Modelo de ML treinado nos logs do PostgreSQL
+- [ ] Fingerprint de dispositivo (WebGL, canvas, fonts)
+- [ ] Dashboard de monitoramento em tempo real
+- [ ] Integração com blocklists de IPs (AbuseIPDB)
+- [ ] Publicar no npm
 
 ---
 
-*Developed as a behavioral alternative to classic reCAPTCHA.*
-*Human imperfection is the best password.*
+*Desenvolvido como alternativa comportamental ao reCAPTCHA clássico.*
+*A imperfeição humana é a melhor senha.*
 
 ---
 
-## Credits
+## Créditos
 
-Developed with the assistance of [Claude Code](https://claude.ai/code) — Anthropic's AI assistant.
+Desenvolvido com o auxílio do [Claude Code](https://claude.ai/code) — AI assistant da Anthropic.
