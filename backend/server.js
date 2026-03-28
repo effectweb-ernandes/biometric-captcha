@@ -1,17 +1,17 @@
 /**
- * server.js v2.0 - Backend de analise biometrica
+ * server.js v2.0 - Biometric analysis backend
  * Stack: Node.js + Express + JWT
  *
- * Novidades v2.0:
- *  - Rota /health para monitoramento
- *  - Logging estruturado (JSON) para integracao com PostgreSQL
- *  - Verificacao de IP bloqueado antes de analisar
- *  - Thresholds configurados via variaveis de ambiente
- *  - Suporte a metricas mobile (touch)
- *  - Penalidade para paste-without-typing e autofill
- *  - Cabecalhos de seguranca aprimorados
+ * What's new in v2.0:
+ *  - /health route for monitoring
+ *  - Structured logging (JSON) for PostgreSQL integration
+ *  - Blocked IP check before analysis
+ *  - Thresholds configured via environment variables
+ *  - Mobile metrics support (touch)
+ *  - Penalty for paste-without-typing and autofill
+ *  - Enhanced security headers
  *
- * Instalar: npm install express jsonwebtoken helmet cors express-rate-limit
+ * Install: npm install express jsonwebtoken helmet cors express-rate-limit
  */
 const express   = require('express');
 const jwt       = require('jsonwebtoken');
@@ -19,7 +19,7 @@ const helmet    = require('helmet');
 const cors      = require('cors');
 const rateLimit = require('express-rate-limit');
 
-// ── Configuracao ──────────────────────────────────────────────────────────────
+// ── Configuration ─────────────────────────────────────────────────────────────
 
 const config = {
   port: parseInt(process.env.PORT || '3001'),
@@ -43,7 +43,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: config.cors.origin }));
 app.use(express.json({ limit: '50kb' }));
-app.set('trust proxy', 1); // necessario atras de nginx/load balancer
+app.set('trust proxy', 1); // required behind nginx/load balancer
 
 // Rate limiting
 const limiter = rateLimit({
@@ -54,7 +54,7 @@ const limiter = rateLimit({
   message: { error: 'Muitas requisicoes. Tente novamente em breve.' },
 });
 
-// ── Logging estruturado ───────────────────────────────────────────────────────
+// ── Structured logging ────────────────────────────────────────────────────────
 
 function log(level, event, data = {}) {
   console.log(JSON.stringify({
@@ -65,7 +65,7 @@ function log(level, event, data = {}) {
   }));
 }
 
-// ── IPs bloqueados em memoria (substituir por DB em producao) ─────────────────
+// ── In-memory blocked IPs (replace with DB in production) ─────────────────────
 
 const blockedIPs = new Map(); // ip -> { reason, expiresAt }
 
@@ -84,7 +84,7 @@ function blockIP(ip, reason, durationMs = 24 * 60 * 60 * 1000) {
   log('WARN', 'ip_blocked', { ip, reason });
 }
 
-// ── Motor de analise ──────────────────────────────────────────────────────────
+// ── Analysis engine ───────────────────────────────────────────────────────────
 
 function analyzeMetrics(metrics) {
   if (!metrics) return { score: 0, flags: ['NO_METRICS'] };
@@ -92,7 +92,7 @@ function analyzeMetrics(metrics) {
   const flags = [];
   let score = 0;
 
-  // 1. Variancia de keystrokes (35 pts)
+  // 1. Keystroke variance (35 pts)
   const ks = metrics.keystroke || {};
   const cv = ks.cv || 0;
   if (cv > 0.5) score += 35;
@@ -105,7 +105,7 @@ function analyzeMetrics(metrics) {
     score = Math.max(0, score - 15);
   }
 
-  // 2. Velocidade media (20 pts)
+  // 2. Average speed (20 pts)
   const avg = ks.mean || 0;
   if (avg > 150) score += 20;
   else if (avg > 80) score += 14;
@@ -118,7 +118,7 @@ function analyzeMetrics(metrics) {
   else if (bp >= 1) score += 12;
   else flags.push('NO_TYPING_ERRORS');
 
-  // 4. Mouse ou Touch (15 pts)
+  // 4. Mouse or Touch (15 pts)
   const isMobile = metrics.session?.isMobile || false;
   if (isMobile) {
     const tv = metrics.touch || {};
@@ -138,13 +138,13 @@ function analyzeMetrics(metrics) {
     }
   }
 
-  // 5. Transicoes entre campos (10 pts)
+  // 5. Field transitions (10 pts)
   const ft = metrics.fieldTransitions || {};
   if (ft.std > 300) score += 10;
   else if (ft.std > 100) score += 6;
   else if (ft.std < 10 && ft.events?.length > 1) flags.push('FIELD_TRANSITIONS_TOO_UNIFORM');
 
-  // Penalidades
+  // Penalties
   if ((metrics.session?.pasteWithoutTyping || 0) > 0) {
     flags.push('PASTE_WITHOUT_TYPING');
     score = Math.max(0, score - 25);
@@ -174,9 +174,9 @@ function detectTampering(localScore, serverScore) {
   return Math.abs(localScore - serverScore) > 30 ? { tampered: true } : { tampered: false };
 }
 
-// ── Rotas ─────────────────────────────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────────────────────
 
-// Health check para monitoramento (uptime, k8s, etc.)
+// Health check for monitoring (uptime, k8s, etc.)
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -186,11 +186,11 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Analise biometrica principal
+// Main biometric analysis
 app.post('/api/captcha/analyze', limiter, async (req, res) => {
   const ip = req.ip;
 
-  // Verifica se IP esta bloqueado
+  // Check if IP is blocked
   if (isBlocked(ip)) {
     log('WARN', 'blocked_ip_request', { ip });
     return res.status(403).json({ error: 'Acesso negado.' });
@@ -205,25 +205,25 @@ app.post('/api/captcha/analyze', limiter, async (req, res) => {
 
     const analysis = analyzeMetrics(metrics);
 
-    // Detecta adulteracao do score cliente
+    // Detect client score tampering
     const tamper = detectTampering(localScore, analysis.score);
     if (tamper.tampered) {
       analysis.flags.push('CLIENT_SCORE_TAMPERED');
       analysis.score = Math.max(0, analysis.score - 40);
     }
 
-    // Decisao
+    // Decision
     let decision;
     if (analysis.score <= config.thresholds.block)   decision = 'BLOCK';
     else if (analysis.score <= config.thresholds.suspect) decision = 'CHALLENGE';
     else decision = 'PASS';
 
-    // Auto-bloqueia IPs com score muito baixo
+    // Auto-block IPs with very low score
     if (analysis.score <= 5) {
       blockIP(ip, 'Score critico: ' + analysis.score, 60 * 60 * 1000); // 1h
     }
 
-    // Logging estruturado
+    // Structured logging
     log('INFO', 'captcha_analysis', {
       decision,
       score: analysis.score,
@@ -232,7 +232,7 @@ app.post('/api/captcha/analyze', limiter, async (req, res) => {
       isMobile: metrics.session?.isMobile || false,
     });
 
-    // Gera JWT
+    // Generate JWT
     const token = jwt.sign(
       { decision, score: analysis.score, flags: analysis.flags, ip },
       config.jwt.secret,
@@ -247,7 +247,7 @@ app.post('/api/captcha/analyze', limiter, async (req, res) => {
   }
 });
 
-// Verificacao do token (usada pelo backend da aplicacao)
+// Token verification (used by the application backend)
 app.post('/api/captcha/verify', async (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ valid: false, error: 'Token ausente.' });
@@ -266,7 +266,7 @@ app.post('/api/captcha/verify', async (req, res) => {
   }
 });
 
-// Rota de status dos IPs bloqueados (proteger em producao!)
+// Blocked IPs status route (protect in production!)
 app.get('/api/captcha/blocked', (req, res) => {
   const list = Array.from(blockedIPs.entries()).map(([ip, data]) => ({ ip, ...data }));
   return res.json({ count: list.length, list });

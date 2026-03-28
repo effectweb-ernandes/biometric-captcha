@@ -1,6 +1,6 @@
 /**
- * demo.js - Logica da demo do Biometric CAPTCHA
- * Depende de: biometric-collector.js (carregado antes)
+ * demo.js - Biometric CAPTCHA demo logic
+ * Depends on: biometric-collector.js (loaded first)
  */
 var iv=[],lk=0,bp=0,keys=0,fj=[],lb2=0,tbars=[],botOn=false,human=true;
 function std(a){if(a.length<2)return 0;var m=mn(a);return Math.sqrt(a.map(function(x){return(x-m)*(x-m);}).reduce(function(a,b){return a+b;},0)/a.length);}

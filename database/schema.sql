@@ -1,18 +1,18 @@
--- Biometric CAPTCHA v2.0 - Schema PostgreSQL 14+
--- Executar: psql -U postgres -d seu_banco -f database/schema.sql
+-- Biometric CAPTCHA v2.0 - PostgreSQL 14+ Schema
+-- Run: psql -U postgres -d your_database -f database/schema.sql
 --
--- Novidades v2.0:
---   - Colunas para metricas mobile (touch)
---   - Colunas para paste_without_typing e autofill_detected
---   - Indice GIN para busca em arrays de flags
---   - View de resumo diario (alem do hourly)
---   - View de top flags para analise de padroes
---   - Funcao de estatisticas de deteccao
+-- What's new in v2.0:
+--   - Columns for mobile metrics (touch)
+--   - Columns for paste_without_typing and autofill_detected
+--   - GIN index for searching flag arrays
+--   - Daily summary view (in addition to hourly)
+--   - Top flags view for pattern analysis
+--   - Detection statistics function
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- -------------------------------------------------------
--- Tabela principal de sessoes analisadas
+-- Main table for analyzed sessions
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS captcha_sessions (
     id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -27,45 +27,45 @@ CREATE TABLE IF NOT EXISTS captcha_sessions (
     server_score        SMALLINT    NOT NULL CHECK (server_score BETWEEN 0 AND 100),
     decision            TEXT        NOT NULL CHECK (decision IN ('PASS','CHALLENGE','BLOCK')),
 
-    -- Metricas de keystroke
+    -- Keystroke metrics
     keystroke_cv        NUMERIC(6,4),
     keystroke_mean      NUMERIC(8,2),
     keystroke_std       NUMERIC(8,2),
     backspace_count     SMALLINT    DEFAULT 0,
     delete_count        SMALLINT    DEFAULT 0,
 
-    -- Metricas de comportamento suspeito
+    -- Suspicious behavior metrics
     paste_count         SMALLINT    DEFAULT 0,
     paste_without_typing SMALLINT   DEFAULT 0,
     autofill_detected   BOOLEAN     DEFAULT FALSE,
 
-    -- Metricas de mouse/touch
+    -- Mouse/touch metrics
     mouse_cv            NUMERIC(6,4),
     mouse_sample_count  SMALLINT,
     touch_event_count   SMALLINT,
     touch_cv            NUMERIC(6,4),
 
-    -- Flags de deteccao (array para busca eficiente)
+    -- Detection flags (array for efficient search)
     flags               TEXT[]      DEFAULT '{}',
 
-    -- Duracao da sessao em ms
+    -- Session duration in ms
     session_duration_ms INTEGER,
 
     created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indices para consultas frequentes
+-- Indexes for frequent queries
 CREATE INDEX IF NOT EXISTS idx_captcha_ip         ON captcha_sessions (ip_address);
 CREATE INDEX IF NOT EXISTS idx_captcha_decision   ON captcha_sessions (decision);
 CREATE INDEX IF NOT EXISTS idx_captcha_created    ON captcha_sessions (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_captcha_score      ON captcha_sessions (server_score);
 CREATE INDEX IF NOT EXISTS idx_captcha_mobile     ON captcha_sessions (is_mobile);
 
--- Indice GIN para busca em arrays de flags (ex: WHERE 'KEYSTROKE_TOO_UNIFORM' = ANY(flags))
+-- GIN index for searching flag arrays (e.g.: WHERE 'KEYSTROKE_TOO_UNIFORM' = ANY(flags))
 CREATE INDEX IF NOT EXISTS idx_captcha_flags_gin  ON captcha_sessions USING GIN (flags);
 
 -- -------------------------------------------------------
--- Tabela de IPs bloqueados
+-- Blocked IPs table
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS blocked_ips (
     ip_address    INET        PRIMARY KEY,
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS blocked_ips (
 CREATE INDEX IF NOT EXISTS idx_blocked_active ON blocked_ips (is_active, expires_at);
 
 -- -------------------------------------------------------
--- View: dashboard por hora
+-- View: hourly dashboard
 -- -------------------------------------------------------
 CREATE OR REPLACE VIEW captcha_dashboard_hourly AS
 SELECT
@@ -99,7 +99,7 @@ GROUP BY DATE_TRUNC('hour', created_at)
 ORDER BY hour DESC;
 
 -- -------------------------------------------------------
--- View: dashboard por dia
+-- View: daily dashboard
 -- -------------------------------------------------------
 CREATE OR REPLACE VIEW captcha_dashboard_daily AS
 SELECT
@@ -116,7 +116,7 @@ GROUP BY DATE_TRUNC('day', created_at)
 ORDER BY day DESC;
 
 -- -------------------------------------------------------
--- View: top flags (quais flags aparecem mais)
+-- View: top flags (which flags appear most)
 -- -------------------------------------------------------
 CREATE OR REPLACE VIEW captcha_top_flags AS
 SELECT
@@ -128,7 +128,7 @@ GROUP BY flag
 ORDER BY occurrences DESC;
 
 -- -------------------------------------------------------
--- View: IPs suspeitos nas ultimas 24h
+-- View: suspicious IPs in the last 24h
 -- -------------------------------------------------------
 CREATE OR REPLACE VIEW suspicious_ips AS
 SELECT
@@ -145,7 +145,7 @@ HAVING COUNT(*) FILTER (WHERE decision = 'BLOCK') > 2
 ORDER BY blocks DESC, avg_score ASC;
 
 -- -------------------------------------------------------
--- Funcao: auto-bloquear IPs com muitas deteccoes em 1h
+-- Function: auto-block IPs with many detections in 1h
 -- -------------------------------------------------------
 CREATE OR REPLACE FUNCTION auto_block_suspicious_ips()
 RETURNS void LANGUAGE plpgsql AS $$
@@ -169,7 +169,7 @@ END;
 $$;
 
 -- -------------------------------------------------------
--- Funcao: estatisticas gerais de deteccao
+-- Function: general detection statistics
 -- -------------------------------------------------------
 CREATE OR REPLACE FUNCTION captcha_stats(periodo INTERVAL DEFAULT INTERVAL '7 days')
 RETURNS TABLE (
@@ -195,7 +195,7 @@ END;
 $$;
 
 -- -------------------------------------------------------
--- Funcao: limpeza de sessoes antigas
+-- Function: cleanup old sessions
 -- -------------------------------------------------------
 CREATE OR REPLACE FUNCTION cleanup_old_sessions(manter_dias INT DEFAULT 30)
 RETURNS INT LANGUAGE plpgsql AS $$
@@ -208,11 +208,11 @@ BEGIN
 END;
 $$;
 
--- Agendar automacao (requer pg_cron):
+-- Schedule automation (requires pg_cron):
 -- SELECT cron.schedule('cleanup-captcha',    '0 3 * * *', 'SELECT cleanup_old_sessions()');
 -- SELECT cron.schedule('auto-block-bots',    '0 * * * *', 'SELECT auto_block_suspicious_ips()');
 
--- Exemplos de consulta:
+-- Query examples:
 -- SELECT * FROM captcha_dashboard_daily LIMIT 7;
 -- SELECT * FROM captcha_top_flags LIMIT 10;
 -- SELECT * FROM captcha_stats(INTERVAL '30 days');

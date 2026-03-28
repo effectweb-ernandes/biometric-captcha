@@ -1,14 +1,14 @@
 /**
  * BiometricCollector.js v2.1
- * Coleta passiva de sinais comportamentais para deteccao de bots.
+ * Passive collection of behavioral signals for bot detection.
  *
- * Novidades v2.1:
- *  - Deteccao avancada de autocomplete/autofill do browser
- *    distinguindo entre: humano com autocomplete vs bot que injeta valores
- *  - Crosscheck entre campos: se todos foram preenchidos sem keystroke
- *    mas houve clique/mouse/tempo adequado, eh considerado autocomplete humano
- *  - Medicao de tempo entre foco e preenchimento por campo
- *  - Deteccao de inputType para diferenciar autocomplete de injecao direta
+ * What's new in v2.1:
+ *  - Advanced browser autocomplete/autofill detection
+ *    distinguishing between: human using autocomplete vs bot injecting values
+ *  - Cross-field check: if all fields were filled without keystrokes
+ *    but there was a click/mouse/adequate time, it is considered human autocomplete
+ *  - Measurement of time between focus and fill per field
+ *  - inputType detection to differentiate autocomplete from direct injection
  */
 class BiometricCollector {
   constructor(formSelector, options = {}) {
@@ -40,7 +40,7 @@ class BiometricCollector {
     this._lastTouchPos    = null;
     this._lastTouchTime   = null;
 
-    // Campos
+    // Fields
     this._fieldTransitions    = [];
     this._fieldFocusDurations = {};
     this._fieldFocusStart     = {};
@@ -48,30 +48,30 @@ class BiometricCollector {
     this._focusCount          = 0;
     this._fieldTypedBefore    = {};
 
-    // Autocomplete / Autofill — core desta versao
+    // Autocomplete / Autofill — core of this version
     this._autocompleteEvents  = []; // {fieldIdx, fillTime, hadMouseBefore, hadKeystrokeBefore, inputType, suspicious}
-    this._fieldValueAtFocus   = {}; // valor do campo quando recebeu foco
-    this._fieldFillTime       = {}; // quando o campo foi preenchido via input sem keydown
-    this._clickBeforeInput    = {}; // se houve click/touch antes do input em cada campo
+    this._fieldValueAtFocus   = {}; // field value when focused
+    this._fieldFillTime       = {}; // when the field was filled via input without keydown
+    this._clickBeforeInput    = {}; // whether there was a click/touch before input in each field
     this._lastClickTime       = 0;
     this._lastTouchEndTime    = 0;
 
-    // Comportamento suspeito
+    // Suspicious behavior
     this._pasteCount          = 0;
     this._pasteWithoutTyping  = 0;
     this._autofillDetected    = false;
-    this._autofillIsHuman     = false; // autocomplete com evidencias de interacao humana
-    this._botInjectionSuspect = false; // preenchimento programatico sem nenhuma interacao
+    this._autofillIsHuman     = false; // autocomplete with evidence of human interaction
+    this._botInjectionSuspect = false; // programmatic fill with no interaction
 
     // Scroll
     this._scrollEvents = [];
 
-    // Sessao
+    // Session
     this._sessionStart   = Date.now();
     this._boundHandlers  = {};
   }
 
-  // ── Inicializacao ──────────────────────────────────────────────────────────
+  // ── Initialization ─────────────────────────────────────────────────────────
 
   init() {
     this._attachFormListeners();
@@ -89,27 +89,27 @@ class BiometricCollector {
   }
 
   // ── Autocomplete Monitor ──────────────────────────────────────────────────
-  // Esta e a parte central da v2.1:
-  // Observa quando um campo muda de valor SEM evento keydown precedente,
-  // e classifica se foi autocomplete humano ou injecao de bot.
+  // This is the core of v2.1:
+  // Observes when a field changes value WITHOUT a preceding keydown event,
+  // and classifies whether it was human autocomplete or bot injection.
 
   _monitorAutocomplete() {
     const fields = this.form.querySelectorAll('input, textarea, select');
 
     fields.forEach((field, idx) => {
-      // Guarda o valor no momento do foco
+      // Store the value when field receives focus
       field.addEventListener('focus', () => {
         this._fieldValueAtFocus[idx] = field.value;
         this._clickBeforeInput[idx]  = (Date.now() - this._lastClickTime) < 2000
                                     || (Date.now() - this._lastTouchEndTime) < 2000;
       });
 
-      // Monitora mudancas de valor via evento 'input'
+      // Monitor value changes via 'input' event
       field.addEventListener('input', (e) => {
         const now = Date.now();
 
-        // Se o campo mudou mas nao houve keydown recente (< 200ms),
-        // provavelmente foi autocomplete ou injecao
+        // If the field changed but there was no recent keydown (< 200ms),
+        // it was probably autocomplete or injection
         const msSinceLastKey = this._lastKeyTime
           ? (performance.now() - this._lastKeyTime)
           : Infinity;
@@ -120,28 +120,28 @@ class BiometricCollector {
           this._autofillDetected = true;
 
           const inputType = e.inputType || 'unknown';
-          // inputType === 'insertReplacementText' ou 'insertFromAutofill'
-          // indicam autocomplete legitimo do browser
+          // inputType === 'insertReplacementText' or 'insertFromAutofill'
+          // indicate legitimate browser autocomplete
           const isLegitimateAutofill = [
             'insertReplacementText',
             'insertFromAutofill',
-            'insertFromPaste',  // usuario colou manualmente
+            'insertFromPaste',  // user pasted manually
           ].includes(inputType);
 
-          // Evidencias de que eh humano usando autocomplete:
-          // 1. Houve clique/toque antes (usuario clicou na sugestao)
-          // 2. O campo estava em foco por tempo adequado (> 300ms)
-          // 3. inputType indica autocomplete legitimo do browser
-          // 4. Ja houve keystroke em ALGUM campo da sessao
+          // Evidence that it is a human using autocomplete:
+          // 1. There was a click/touch before (user clicked the suggestion)
+          // 2. The field was focused for adequate time (> 300ms)
+          // 3. inputType indicates legitimate browser autocomplete
+          // 4. There was already a keystroke in SOME field in the session
           const focusDuration = this._fieldFocusStart[idx]
             ? (performance.now() - this._fieldFocusStart[idx])
             : 0;
 
           const hasHumanEvidence =
-            this._clickBeforeInput[idx]           ||  // clicou antes
-            focusDuration > 300                   ||  // ficou no campo por tempo adequado
-            isLegitimateAutofill                  ||  // inputType correto
-            this._keystrokeTimestamps.length > 0;     // ja digitou em outro campo
+            this._clickBeforeInput[idx]           ||  // clicked before
+            focusDuration > 300                   ||  // stayed in the field for adequate time
+            isLegitimateAutofill                  ||  // correct inputType
+            this._keystrokeTimestamps.length > 0;     // already typed in another field
 
           this._autocompleteEvents.push({
             fieldIdx:          idx,
@@ -158,14 +158,14 @@ class BiometricCollector {
           if (hasHumanEvidence) {
             this._autofillIsHuman = true;
           } else {
-            // Sem nenhuma evidencia de interacao humana = suspeito de bot
+            // No evidence of human interaction = suspected bot
             this._botInjectionSuspect = true;
           }
         }
       });
     });
 
-    // Verifica campos pre-preenchidos apos 800ms (autofill no carregamento da pagina)
+    // Check pre-filled fields after 800ms (autofill on page load)
     setTimeout(() => {
       const fields2 = this.form.querySelectorAll('input, textarea');
       let preFilledCount = 0;
@@ -174,15 +174,15 @@ class BiometricCollector {
       });
 
       if (preFilledCount > 0 && this._keystrokeTimestamps.length === 0) {
-        // Campos pre-preenchidos sem nenhuma interacao ainda
-        // Pode ser autofill legitimo do browser no carregamento
-        // Marca como autofill mas nao como bot (aguarda mais evidencias)
+        // Pre-filled fields with no interaction yet
+        // May be legitimate browser autofill on page load
+        // Mark as autofill but not as bot (wait for more evidence)
         this._autofillDetected = true;
       }
     }, 800);
   }
 
-  // ── Formulario ─────────────────────────────────────────────────────────────
+  // ── Form ───────────────────────────────────────────────────────────────────
 
   _attachFormListeners() {
     this.form.querySelectorAll('input, textarea, select').forEach((field, idx) => {
@@ -308,7 +308,7 @@ class BiometricCollector {
     this._boundHandlers['scroll'] = { el: document, event: 'wheel', fn, opts: { passive: true } };
   }
 
-  // ── Estatisticas ───────────────────────────────────────────────────────────
+  // ── Statistics ─────────────────────────────────────────────────────────────
 
   _stats(arr) {
     if (arr.length < 2) return { mean: 0, std: 0, min: 0, max: 0, cv: 0 };
@@ -323,7 +323,7 @@ class BiometricCollector {
     };
   }
 
-  // ── Metricas publicas ──────────────────────────────────────────────────────
+  // ── Public metrics ─────────────────────────────────────────────────────────
 
   getMetrics() {
     const ks = this._stats(this._keystrokeIntervals);
@@ -331,7 +331,7 @@ class BiometricCollector {
     const tv = this._stats(this._touchVelocities);
     const fd = this._stats(Object.values(this._fieldFocusDurations));
 
-    // Classifica o cenario de autocomplete
+    // Classify the autocomplete scenario
     const totalAutofillEvents    = this._autocompleteEvents.length;
     const humanAutofillCount     = this._autocompleteEvents.filter(e => e.isHuman).length;
     const suspiciousAutofillCount = this._autocompleteEvents.filter(e => e.suspicious).length;
@@ -366,17 +366,17 @@ class BiometricCollector {
     };
   }
 
-  // ── Score local ────────────────────────────────────────────────────────────
+  // ── Local score ────────────────────────────────────────────────────────────
 
   computeLocalScore() {
     const m = this.getMetrics();
     let score = 0;
 
-    // 1. Variancia de keystroke (35 pts)
+    // 1. Keystroke variance (35 pts)
     const cv = m.keystroke.cv;
     if (cv > 0.5) score += 35; else if (cv > 0.3) score += 25; else if (cv > 0.1) score += 12;
 
-    // 2. Velocidade media (20 pts)
+    // 2. Average speed (20 pts)
     const avg = m.keystroke.mean;
     if (avg > 150) score += 20; else if (avg > 80) score += 14; else if (avg > 40) score += 6;
 
@@ -384,7 +384,7 @@ class BiometricCollector {
     if (m.session.backspaceCount >= 3) score += 20;
     else if (m.session.backspaceCount >= 1) score += 12;
 
-    // 4. Mouse ou Touch (15 pts)
+    // 4. Mouse or Touch (15 pts)
     if (m.session.isMobile) {
       if (m.touch.cv > 0.3) score += 15; else if (m.touch.cv > 0.1) score += 8;
     } else {
@@ -393,7 +393,7 @@ class BiometricCollector {
       }
     }
 
-    // 5. Transicoes entre campos (10 pts)
+    // 5. Field transitions (10 pts)
     const transitions = this._fieldTransitions;
     if (transitions.length > 1) {
       const gaps = transitions.slice(1).map((t, i) => t.ts - transitions[i].ts);
@@ -401,21 +401,21 @@ class BiometricCollector {
       if (gapStd > 300) score += 10; else if (gapStd > 100) score += 6;
     }
 
-    // Penalidades
+    // Penalties
     if (m.session.pasteWithoutTyping > 0)  score = Math.max(0, score - 25);
 
-    // Autocomplete: so penaliza se for SUSPEITO de bot
-    // Autocomplete humano legitimo NAO penaliza
+    // Autocomplete: only penalize if SUSPECTED bot
+    // Legitimate human autocomplete does NOT penalize
     if (m.session.botInjectionSuspect && !m.session.autofillIsHuman) {
-      score = Math.max(0, score - 35); // penalidade forte
+      score = Math.max(0, score - 35); // strong penalty
     } else if (m.session.autofillDetected && m.session.autofillIsHuman) {
-      score += 5; // bonus: autocomplete humano com evidencia de interacao
+      score += 5; // bonus: human autocomplete with evidence of interaction
     }
 
     return Math.min(score, 100);
   }
 
-  // ── Envio ao backend ───────────────────────────────────────────────────────
+  // ── Send to backend ────────────────────────────────────────────────────────
 
   async getToken() {
     const payload = {
