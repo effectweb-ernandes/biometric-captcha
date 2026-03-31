@@ -66,6 +66,36 @@ class BiometricCollector {
     // Scroll
     this._scrollEvents = [];
 
+    // Bigrams (key-pair timing)
+    this._bigramIntervals = {};
+    this._lastBigramKey   = null;
+
+    // Per-field keystroke intervals (cross-field correlation)
+    this._fieldKeystrokeIntervals = {};
+
+    // Honeypot: time from focus to first key per field
+    this._fieldFirstKeyDelay = {};
+    this._fieldFirstKeySet   = {};
+
+    // Field transition tracking
+    // Key insight: blur→focus gap is always ~0ms regardless of human/bot.
+    // The real signal is whether a mousedown or Tab keydown PRECEDED the focus.
+    this._lastBlurTime          = null;
+    this._fieldTransitionGaps   = [];   // human transition times (lk→mousedown or lk→Tab)
+    this._nonHumanTransGaps     = [];   // programmatic focus records (no interaction before focus)
+    this._criticalTransitions   = 0;    // programmatic focus count on non-first fields
+    this._suspiciousTransitions = 0;    // human transitions < 300ms (fast Tab/click)
+    this._firstFocusDone        = false; // first focus exempt (page load / autofocus)
+
+    // Human-initiated focus tracking
+    this._lastMousedownTime      = 0;    // 0 = never set; performance.now()-0 is always large
+    this._lastTabTime            = 0;
+    this._lastPrintableKeyTime   = null; // last non-Tab key; used for Tab-transition timing
+    this._syntheticEventDetected = false; // isTrusted=false on mouse/key event = JS bot
+
+    // Backspace timestamps (detect artificial regularity)
+    this._backspaceTimestamps = [];
+
     // Session
     this._sessionStart   = Date.now();
     this._boundHandlers  = {};
@@ -189,6 +219,33 @@ class BiometricCollector {
       const onFocus = () => {
         this._focusCount++;
         const now = performance.now();
+
+        const isFirst = !this._firstFocusDone;
+        this._firstFocusDone = true;
+
+        if (!isFirst) {
+          // A human always causes focus via mousedown (click) or Tab keydown.
+          // JS automation via element.focus() produces no such preceding event.
+          const byMouse = this._lastMousedownTime > 0 && (now - this._lastMousedownTime) < 500;
+          const byTab   = this._lastTabTime > 0       && (now - this._lastTabTime)       < 500;
+
+          if (!byMouse && !byTab) {
+            // Programmatic focus: JS element.focus() with no prior user interaction
+            this._nonHumanTransGaps.push(0);
+            this._criticalTransitions++;
+          } else {
+            // Real transition time: from last keystroke to the human event that triggered focus
+            // Tab: use _lastPrintableKeyTime because _lastTabTime === _lastKeyTime when Tab fires
+            const refTime  = byMouse ? this._lastMousedownTime  : this._lastTabTime;
+            const baseTime = byMouse ? this._lastKeyTime        : this._lastPrintableKeyTime;
+            const trans = baseTime !== null ? refTime - baseTime : null;
+            if (trans !== null && trans > 0) {
+              this._fieldTransitionGaps.push(trans);
+              if (trans < 300) this._suspiciousTransitions++;
+            }
+          }
+        }
+
         if (this._activeField !== null) {
           const prev = this._fieldFocusStart[this._activeField];
           if (prev) {
@@ -197,7 +254,7 @@ class BiometricCollector {
           }
           this._fieldTransitions.push({ from: this._activeField, to: idx, ts: now });
         }
-        this._activeField       = idx;
+        this._activeField          = idx;
         this._fieldFocusStart[idx] = now;
       };
 
@@ -208,18 +265,49 @@ class BiometricCollector {
           this._fieldFocusDurations[idx] += now - this._fieldFocusStart[idx];
           delete this._fieldFocusStart[idx];
         }
-        this._activeField = null;
+        this._lastBlurTime = now;
+        this._activeField  = null;
       };
 
       const onKeydown = (e) => {
         const now = performance.now();
         this._fieldTypedBefore[idx] = true;
-        if (e.key === 'Backspace') this._backspaceCount++;
+        if (e.key === 'Tab') {
+          if (e.isTrusted) this._lastTabTime = now;
+          else             this._syntheticEventDetected = true;
+        } else {
+          this._lastPrintableKeyTime = now;
+        }
+        if (e.key === 'Backspace') { this._backspaceCount++; this._backspaceTimestamps.push(now); }
         if (e.key === 'Delete')    this._deleteCount++;
+
+        const isPrintable = e.key.length === 1;
+
         if (this._lastKeyTime !== null) {
           const d = now - this._lastKeyTime;
-          if (d < 5000) this._keystrokeIntervals.push(d);
+          if (d < 5000) {
+            this._keystrokeIntervals.push(d);
+
+            // Per-field intervals (cross-field correlation)
+            if (!this._fieldKeystrokeIntervals[idx]) this._fieldKeystrokeIntervals[idx] = [];
+            this._fieldKeystrokeIntervals[idx].push(d);
+
+            // Bigrams
+            if (isPrintable && this._lastBigramKey !== null) {
+              const bigram = this._lastBigramKey + e.key;
+              if (!this._bigramIntervals[bigram]) this._bigramIntervals[bigram] = [];
+              this._bigramIntervals[bigram].push(d);
+            }
+          }
         }
+
+        // Honeypot: first key delay per field
+        if (!this._fieldFirstKeySet[idx] && this._fieldFocusStart[idx] !== undefined) {
+          this._fieldFirstKeyDelay[idx] = now - this._fieldFocusStart[idx];
+          this._fieldFirstKeySet[idx]   = true;
+        }
+
+        this._lastBigramKey = isPrintable ? e.key : null;
         this._keystrokeTimestamps.push(now);
         this._lastKeyTime = now;
       };
@@ -229,15 +317,24 @@ class BiometricCollector {
         if (!this._fieldTypedBefore[idx]) this._pasteWithoutTyping++;
       };
 
-      field.addEventListener('focus',   onFocus);
-      field.addEventListener('blur',    onBlur);
-      field.addEventListener('keydown', onKeydown);
-      field.addEventListener('paste',   onPaste);
+      const onMousedown  = (e) => {
+        if (e.isTrusted) this._lastMousedownTime = performance.now();
+        else             this._syntheticEventDetected = true;
+      };
 
-      this._boundHandlers['focus_'   + idx] = { el: field, event: 'focus',   fn: onFocus };
-      this._boundHandlers['blur_'    + idx] = { el: field, event: 'blur',    fn: onBlur };
-      this._boundHandlers['key_'     + idx] = { el: field, event: 'keydown', fn: onKeydown };
-      this._boundHandlers['paste_'   + idx] = { el: field, event: 'paste',   fn: onPaste };
+      field.addEventListener('focus',      onFocus);
+      field.addEventListener('blur',       onBlur);
+      field.addEventListener('keydown',    onKeydown);
+      field.addEventListener('paste',      onPaste);
+      field.addEventListener('mousedown',  onMousedown);
+      field.addEventListener('touchstart', onMousedown, { passive: true });
+
+      this._boundHandlers['focus_'   + idx] = { el: field, event: 'focus',      fn: onFocus };
+      this._boundHandlers['blur_'    + idx] = { el: field, event: 'blur',       fn: onBlur };
+      this._boundHandlers['key_'     + idx] = { el: field, event: 'keydown',    fn: onKeydown };
+      this._boundHandlers['paste_'   + idx] = { el: field, event: 'paste',      fn: onPaste };
+      this._boundHandlers['mdown_'   + idx] = { el: field, event: 'mousedown',  fn: onMousedown };
+      this._boundHandlers['tstart_'  + idx] = { el: field, event: 'touchstart', fn: onMousedown, opts: { passive: true } };
     });
   }
 
@@ -332,9 +429,45 @@ class BiometricCollector {
     const fd = this._stats(Object.values(this._fieldFocusDurations));
 
     // Classify the autocomplete scenario
-    const totalAutofillEvents    = this._autocompleteEvents.length;
-    const humanAutofillCount     = this._autocompleteEvents.filter(e => e.isHuman).length;
+    const totalAutofillEvents     = this._autocompleteEvents.length;
+    const humanAutofillCount      = this._autocompleteEvents.filter(e => e.isHuman).length;
     const suspiciousAutofillCount = this._autocompleteEvents.filter(e => e.suspicious).length;
+
+    // Bigram analysis
+    const repeatedBigrams = Object.entries(this._bigramIntervals)
+      .filter(([, arr]) => arr.length >= 3);
+    const bigramStats = repeatedBigrams.map(([bigram, arr]) => ({ bigram, ...this._stats(arr), count: arr.length }));
+    const bigramHighVariance = bigramStats.filter(b => b.cv > 0.2).length;
+    const bigramLowVariance  = bigramStats.filter(b => b.cv < 0.1).length;
+
+    // Rhythm curve: split intervals into thirds and compare means
+    const allIntervals = this._keystrokeIntervals;
+    const t3 = Math.floor(allIntervals.length / 3);
+    const rhythmMeans = t3 >= 2 ? [
+      this._stats(allIntervals.slice(0, t3)).mean,
+      this._stats(allIntervals.slice(t3, 2 * t3)).mean,
+      this._stats(allIntervals.slice(2 * t3)).mean,
+    ] : null;
+    const rhythmVariance = rhythmMeans ? this._stats(rhythmMeans).std : 0;
+
+    // Honeypot timing
+    const firstKeyDelays = Object.values(this._fieldFirstKeyDelay);
+
+    // Cross-field correlation
+    const fieldMeans = Object.values(this._fieldKeystrokeIntervals)
+      .filter(arr => arr.length >= 3)
+      .map(arr => this._stats(arr).mean);
+    const fieldMeanStats = this._stats(fieldMeans);
+
+    // Field transition gap stats (last keystroke → human focus event)
+    const ftGapStats = this._stats(this._fieldTransitionGaps);
+
+    // Backspace pattern (detect artificial regularity)
+    const bsIntervals = [];
+    for (let i = 1; i < this._backspaceTimestamps.length; i++) {
+      bsIntervals.push(this._backspaceTimestamps[i] - this._backspaceTimestamps[i - 1]);
+    }
+    const bsStats = this._stats(bsIntervals);
 
     return {
       session: {
@@ -347,6 +480,9 @@ class BiometricCollector {
         focusCount:            this._focusCount,
         fieldTransitions:      this._fieldTransitions.length,
         isMobile:              this._touchEvents.length > 0,
+
+        // Synthetic event detection (isTrusted=false)
+        syntheticEventDetected: this._syntheticEventDetected,
 
         // Autocomplete
         autofillDetected:      this._autofillDetected,
@@ -363,6 +499,38 @@ class BiometricCollector {
       fieldTransitions:   { events: this._fieldTransitions },
       fieldFocusDuration: { ...fd, perField: this._fieldFocusDurations },
       scroll:             { eventCount: this._scrollEvents.length },
+      bigrams: {
+        repeatedCount:      repeatedBigrams.length,
+        highVarianceCount:  bigramHighVariance,
+        lowVarianceCount:   bigramLowVariance,
+        details:            bigramStats,
+      },
+      rhythm: {
+        means:    rhythmMeans,
+        variance: rhythmVariance,
+      },
+      honeypot: {
+        firstKeyDelays,
+        suspiciousCount: firstKeyDelays.filter(d => d < 50).length,
+      },
+      crossField: {
+        fieldCount:   fieldMeans.length,
+        fieldMeans,
+        fieldMeanCV:  fieldMeanStats.cv,
+      },
+      fieldTransitionGaps: {
+        gaps:             this._fieldTransitionGaps,
+        nonHumanGaps:     this._nonHumanTransGaps,
+        criticalCount:    this._criticalTransitions,
+        suspiciousCount:  this._suspiciousTransitions,
+        avgMs:            Math.round(ftGapStats.mean),
+        ...ftGapStats,
+      },
+      backspacePattern: {
+        count:      this._backspaceCount,
+        tooRegular: bsIntervals.length >= 2 && bsStats.cv < 0.15,
+        ...bsStats,
+      },
     };
   }
 
@@ -372,44 +540,79 @@ class BiometricCollector {
     const m = this.getMetrics();
     let score = 0;
 
-    // 1. Keystroke variance (35 pts)
+    // 1. Keystroke variance (25 pts)
     const cv = m.keystroke.cv;
-    if (cv > 0.5) score += 35; else if (cv > 0.3) score += 25; else if (cv > 0.1) score += 12;
+    if (cv > 0.5) score += 25; else if (cv > 0.3) score += 18; else if (cv > 0.1) score += 9;
 
-    // 2. Average speed (20 pts)
+    // 2. Average speed (15 pts)
     const avg = m.keystroke.mean;
-    if (avg > 150) score += 20; else if (avg > 80) score += 14; else if (avg > 40) score += 6;
+    if (avg > 150) score += 15; else if (avg > 80) score += 10; else if (avg > 40) score += 5;
 
-    // 3. Backspaces (20 pts)
-    if (m.session.backspaceCount >= 3) score += 20;
-    else if (m.session.backspaceCount >= 1) score += 12;
+    // 3. Backspaces (10 pts)
+    if (m.session.backspaceCount >= 3) score += 10;
+    else if (m.session.backspaceCount >= 1) score += 6;
 
-    // 4. Mouse or Touch (15 pts)
+    // 4. Mouse or Touch (10 pts)
     if (m.session.isMobile) {
-      if (m.touch.cv > 0.3) score += 15; else if (m.touch.cv > 0.1) score += 8;
+      if (m.touch.cv > 0.3) score += 10; else if (m.touch.cv > 0.1) score += 5;
     } else {
       if (m.mouse.sampleCount > 20) {
-        if (m.mouse.cv > 0.4) score += 15; else if (m.mouse.cv > 0.2) score += 8;
+        if (m.mouse.cv > 0.4) score += 10; else if (m.mouse.cv > 0.2) score += 6;
       }
     }
 
-    // 5. Field transitions (10 pts)
+    // 5. Field transitions (5 pts)
     const transitions = this._fieldTransitions;
     if (transitions.length > 1) {
       const gaps = transitions.slice(1).map((t, i) => t.ts - transitions[i].ts);
       const gapStd = this._stats(gaps).std;
-      if (gapStd > 300) score += 10; else if (gapStd > 100) score += 6;
+      if (gapStd > 300) score += 5; else if (gapStd > 100) score += 3;
+    }
+
+    // 6. Bigram consistency (15 pts)
+    if (m.bigrams.highVarianceCount > 0) score += 15;
+    else if (m.bigrams.repeatedCount > 0 && m.bigrams.lowVarianceCount === 0) score += 8;
+
+    // 7. Rhythm curve (10 pts)
+    if (m.rhythm.variance > 20) score += 10;
+    else if (m.rhythm.variance > 10) score += 5;
+
+    // 8. Honeypot timing (10 pts)
+    const delays = m.honeypot.firstKeyDelays;
+    if (delays.length > 0) {
+      const humanDelays = delays.filter(d => d >= 100 && d <= 1500).length;
+      if (humanDelays === delays.length) score += 10;
+      else if (humanDelays > 0) score += 5;
     }
 
     // Penalties
-    if (m.session.pasteWithoutTyping > 0)  score = Math.max(0, score - 25);
+    if (m.session.pasteWithoutTyping > 0) score = Math.max(0, score - 25);
 
-    // Autocomplete: only penalize if SUSPECTED bot
-    // Legitimate human autocomplete does NOT penalize
+    if (m.session.keystrokeCount >= 50 && m.session.backspaceCount === 0)
+      score = Math.max(0, score - 15);
+
+    if (m.bigrams.repeatedCount > 0 && m.bigrams.lowVarianceCount > m.bigrams.highVarianceCount)
+      score = Math.max(0, score - 15);
+
+    if (m.crossField.fieldCount >= 2 && m.crossField.fieldMeanCV < 0.05)
+      score = Math.max(0, score - 10);
+
+    if (m.honeypot.suspiciousCount > 0)
+      score = Math.max(0, score - 15);
+
+    // Penalty: synthetic events (isTrusted=false) or programmatic focus = direct BOT
+    if (m.session.syntheticEventDetected || m.fieldTransitionGaps.criticalCount > 0) return 0;
+    // Penalty: human transition < 300ms (fast Tab or click right after typing)
+    score = Math.max(0, score - 15 * m.fieldTransitionGaps.suspiciousCount);
+
+    // Penalty: artificially random CV (> 0.95) combined with suspiciously regular backspaces
+    if (m.keystroke.cv > 0.95 && m.backspacePattern.tooRegular)
+      score = Math.max(0, score - 10);
+
     if (m.session.botInjectionSuspect && !m.session.autofillIsHuman) {
-      score = Math.max(0, score - 35); // strong penalty
+      score = Math.max(0, score - 35);
     } else if (m.session.autofillDetected && m.session.autofillIsHuman) {
-      score += 5; // bonus: human autocomplete with evidence of interaction
+      score += 5;
     }
 
     return Math.min(score, 100);

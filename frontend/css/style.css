@@ -42,3 +42,8 @@ textarea { min-height: 70px; resize: vertical; }
 .bb { background: #fee2e2; color: #dc2626; }
 .bi { background: #f1f5f9; color: #64748b; }
 .aux-label { font-size: 11px; color: #bbb; margin-bottom: 3px; }
+.fe-msg { font-size: 12px; margin-top: 4px; min-height: 16px; }
+.fe-msg.ok  { color: #16a34a; }
+.fe-msg.err { color: #dc2626; }
+input[type=email].valid   { border-color: #16a34a !important; }
+input[type=email].invalid { border-color: #dc2626 !important; }
