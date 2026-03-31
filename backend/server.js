@@ -28,8 +28,8 @@ const config = {
     expiresIn: process.env.JWT_EXPIRES || '10m',
   },
   thresholds: {
-    block:   parseInt(process.env.THRESHOLD_BLOCK   || '20'),
-    suspect: parseInt(process.env.THRESHOLD_SUSPECT || '45'),
+    block:   parseInt(process.env.THRESHOLD_BLOCK   || '25'),
+    suspect: parseInt(process.env.THRESHOLD_SUSPECT || '65'),
   },
   cors: {
     origin: process.env.ALLOWED_ORIGIN || '*',
@@ -92,12 +92,12 @@ function analyzeMetrics(metrics) {
   const flags = [];
   let score = 0;
 
-  // 1. Keystroke variance (35 pts)
-  const ks = metrics.keystroke || {};
-  const cv = ks.cv || 0;
-  if (cv > 0.5) score += 35;
-  else if (cv > 0.3) score += 25;
-  else if (cv > 0.1) score += 12;
+  // 1. Keystroke variance (25 pts)
+  const ks  = metrics.keystroke || {};
+  const cv  = ks.cv || 0;
+  if (cv > 0.5) score += 25;
+  else if (cv > 0.3) score += 18;
+  else if (cv > 0.1) score += 9;
   else flags.push('KEYSTROKE_TOO_UNIFORM');
 
   if (ks.max && ks.min && ks.min > 0 && ks.max / ks.min > 50) {
@@ -105,63 +105,108 @@ function analyzeMetrics(metrics) {
     score = Math.max(0, score - 15);
   }
 
-  // 2. Average speed (20 pts)
+  // 2. Average speed (15 pts)
   const avg = ks.mean || 0;
-  if (avg > 150) score += 20;
-  else if (avg > 80) score += 14;
-  else if (avg > 40) score += 6;
+  if (avg > 150) score += 15;
+  else if (avg > 80) score += 10;
+  else if (avg > 40) score += 5;
   else flags.push('TYPING_TOO_FAST');
 
-  // 3. Backspaces (20 pts)
-  const bp = metrics.session?.backspaceCount || 0;
-  if (bp >= 3) score += 20;
-  else if (bp >= 1) score += 12;
+  // 3. Backspaces (10 pts)
+  const bp       = metrics.session?.backspaceCount || 0;
+  const keyCount = metrics.session?.keystrokeCount || 0;
+  if (bp >= 3) score += 10;
+  else if (bp >= 1) score += 6;
   else flags.push('NO_TYPING_ERRORS');
 
-  // 4. Mouse or Touch (15 pts)
+  if (keyCount >= 50 && bp === 0) {
+    flags.push('NO_ERRORS_LONG_TEXT');
+    score = Math.max(0, score - 15);
+  }
+
+  // 4. Mouse or Touch (10 pts)
   const isMobile = metrics.session?.isMobile || false;
   if (isMobile) {
     const tv = metrics.touch || {};
     if (tv.eventCount > 5) {
-      if (tv.cv > 0.3) score += 15;
-      else if (tv.cv > 0.1) score += 8;
+      if (tv.cv > 0.3) score += 10;
+      else if (tv.cv > 0.1) score += 5;
       else flags.push('TOUCH_TOO_UNIFORM');
     }
   } else {
     const mouse = metrics.mouse || {};
     if (mouse.sampleCount > 20) {
-      if (mouse.cv > 0.4) score += 15;
-      else if (mouse.cv > 0.2) score += 8;
+      if (mouse.cv > 0.4) score += 10;
+      else if (mouse.cv > 0.2) score += 6;
       else flags.push('MOUSE_TOO_LINEAR');
     } else {
       flags.push('NO_MOUSE_DATA');
     }
   }
 
-  // 5. Field transitions (10 pts)
+  // 5. Field transitions (5 pts)
   const ft = metrics.fieldTransitions || {};
-  if (ft.std > 300) score += 10;
-  else if (ft.std > 100) score += 6;
+  if (ft.std > 300) score += 5;
+  else if (ft.std > 100) score += 3;
   else if (ft.std < 10 && ft.events?.length > 1) flags.push('FIELD_TRANSITIONS_TOO_UNIFORM');
 
-  // Penalties
+  // 6. Bigram analysis (15 pts)
+  const bg = metrics.bigrams || {};
+  if (bg.highVarianceCount > 0) score += 15;
+  else if (bg.repeatedCount > 0 && bg.lowVarianceCount === 0) score += 8;
+
+  if (bg.repeatedCount > 0 && bg.lowVarianceCount > bg.highVarianceCount) {
+    flags.push('BIGRAM_TOO_UNIFORM');
+    score = Math.max(0, score - 15);
+  }
+
+  // 7. Rhythm curve (10 pts)
+  const rhythm = metrics.rhythm || {};
+  if (rhythm.variance > 20) score += 10;
+  else if (rhythm.variance > 10) score += 5;
+  else if ((rhythm.variance || 0) === 0 && keyCount > 20) {
+    flags.push('FLAT_RHYTHM_CURVE');
+    score = Math.max(0, score - 10);
+  }
+
+  // 8. Honeypot timing (10 pts)
+  const honeypot = metrics.honeypot || {};
+  const delays   = honeypot.firstKeyDelays || [];
+  if (delays.length > 0) {
+    const humanDelays   = delays.filter(d => d >= 100 && d <= 1500).length;
+    const instantDelays = delays.filter(d => d < 50).length;
+    if (humanDelays === delays.length) score += 10;
+    else if (humanDelays > 0) score += 5;
+    if (instantDelays > 0) {
+      flags.push('INSTANT_TYPING_DETECTED');
+      score = Math.max(0, score - 15);
+    }
+  }
+
+  // Cross-field correlation penalty
+  const crossField = metrics.crossField || {};
+  if (crossField.fieldCount >= 2 && (crossField.fieldMeanCV || 0) < 0.05) {
+    flags.push('UNIFORM_CROSS_FIELD_SPEED');
+    score = Math.max(0, score - 10);
+  }
+
+  // Existing penalties
   if ((metrics.session?.pasteWithoutTyping || 0) > 0) {
     flags.push('PASTE_WITHOUT_TYPING');
     score = Math.max(0, score - 25);
   }
 
-  if (metrics.session?.autofillDetected) {
+  if (metrics.session?.autofillDetected && !metrics.session?.autofillIsHuman) {
     flags.push('AUTOFILL_DETECTED');
     score = Math.max(0, score - 10);
   }
 
-  if ((metrics.session?.pasteCount || 0) > 0 && (metrics.session?.keystrokeCount || 0) < 5) {
+  if ((metrics.session?.pasteCount || 0) > 0 && keyCount < 5) {
     flags.push('PASTE_DOMINANT');
     score = Math.max(0, score - 20);
   }
 
   const sessionSec = (metrics.session?.duration || 0) / 1000;
-  const keyCount   = metrics.session?.keystrokeCount || 0;
   if (keyCount > 20 && sessionSec < 2) {
     flags.push('IMPOSSIBLE_SPEED');
     score = 0;
