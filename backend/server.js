@@ -18,13 +18,26 @@ const jwt       = require('jsonwebtoken');
 const helmet    = require('helmet');
 const cors      = require('cors');
 const rateLimit = require('express-rate-limit');
+const fs        = require('fs');
+const path      = require('path');
 
 // ── Configuration ─────────────────────────────────────────────────────────────
+
+// ── Startup validation ────────────────────────────────────────────────────────
+
+if (!process.env.JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is required. Set it before starting the server.');
+  process.exit(1);
+}
+
+if (process.env.ALLOWED_ORIGIN === '*') {
+  console.warn('[WARN] ALLOWED_ORIGIN is set to "*" — all origins are permitted. Restrict this in production.');
+}
 
 const config = {
   port: parseInt(process.env.PORT || '3001'),
   jwt: {
-    secret:    process.env.JWT_SECRET || 'troque-em-producao',
+    secret:    process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES || '10m',
   },
   thresholds: {
@@ -32,7 +45,8 @@ const config = {
     suspect: parseInt(process.env.THRESHOLD_SUSPECT || '65'),
   },
   cors: {
-    origin: process.env.ALLOWED_ORIGIN || '*',
+    // Explicitly set ALLOWED_ORIGIN. Defaults to false (no cross-origin).
+    origin: process.env.ALLOWED_ORIGIN || false,
   },
 };
 
@@ -65,15 +79,43 @@ function log(level, event, data = {}) {
   }));
 }
 
-// ── In-memory blocked IPs (replace with DB in production) ─────────────────────
+// ── Persistent IP blocking (JSON file) ───────────────────────────────────────
 
-const blockedIPs = new Map(); // ip -> { reason, expiresAt }
+const BLOCKED_IPS_FILE = path.join(__dirname, 'blocked-ips.json');
+
+function loadBlockedIPs() {
+  try {
+    if (fs.existsSync(BLOCKED_IPS_FILE)) {
+      const raw  = fs.readFileSync(BLOCKED_IPS_FILE, 'utf8');
+      const data = JSON.parse(raw);
+      const now  = Date.now();
+      // Drop expired entries on load
+      const active = Object.entries(data).filter(([, v]) => !v.expiresAt || v.expiresAt > now);
+      return new Map(active);
+    }
+  } catch (err) {
+    console.warn('[WARN] Could not load blocked-ips.json:', err.message);
+  }
+  return new Map();
+}
+
+function saveBlockedIPs() {
+  try {
+    const obj = Object.fromEntries(blockedIPs);
+    fs.writeFileSync(BLOCKED_IPS_FILE, JSON.stringify(obj, null, 2));
+  } catch (err) {
+    console.warn('[WARN] Could not save blocked-ips.json:', err.message);
+  }
+}
+
+const blockedIPs = loadBlockedIPs();
 
 function isBlocked(ip) {
   const entry = blockedIPs.get(ip);
   if (!entry) return false;
   if (entry.expiresAt && Date.now() > entry.expiresAt) {
     blockedIPs.delete(ip);
+    saveBlockedIPs();
     return false;
   }
   return true;
@@ -81,6 +123,7 @@ function isBlocked(ip) {
 
 function blockIP(ip, reason, durationMs = 24 * 60 * 60 * 1000) {
   blockedIPs.set(ip, { reason, expiresAt: Date.now() + durationMs });
+  saveBlockedIPs();
   log('WARN', 'ip_blocked', { ip, reason });
 }
 
@@ -244,17 +287,19 @@ app.post('/api/captcha/analyze', limiter, async (req, res) => {
   try {
     const { metrics, localScore, userAgent, platform, language } = req.body;
 
-    if (!metrics || typeof localScore !== 'number') {
+    if (!metrics) {
       return res.status(400).json({ error: 'Payload invalido.' });
     }
 
     const analysis = analyzeMetrics(metrics);
 
-    // Detect client score tampering
-    const tamper = detectTampering(localScore, analysis.score);
-    if (tamper.tampered) {
-      analysis.flags.push('CLIENT_SCORE_TAMPERED');
-      analysis.score = Math.max(0, analysis.score - 40);
+    // Detect client score tampering only when localScore is provided
+    if (typeof localScore === 'number') {
+      const tamper = detectTampering(localScore, analysis.score);
+      if (tamper.tampered) {
+        analysis.flags.push('CLIENT_SCORE_TAMPERED');
+        analysis.score = Math.max(0, analysis.score - 40);
+      }
     }
 
     // Decision
