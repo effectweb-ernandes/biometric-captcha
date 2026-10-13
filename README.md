@@ -171,7 +171,3 @@ Sophisticated bots that attempt to simulate human variance generally fail on two
 *Human imperfection is the best password.*
 
 ---
-
-## Credits
-
-Developed with the assistance of [Claude Code](https://claude.ai/code) — Anthropic's AI assistant.
