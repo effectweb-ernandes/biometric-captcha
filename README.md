@@ -175,7 +175,3 @@ Sophisticated bots that attempt to simulate human variance generally fail on two
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
-
-## Credits
-
-Developed with the assistance of [Claude Code](https://claude.ai/code) — Anthropic's AI assistant.
